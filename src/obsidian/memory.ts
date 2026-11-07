@@ -96,6 +96,25 @@ export async function readBootContext(app: App, paths: ExoPaths, opts: BootOpts 
   const parts: string[] = [];
   const ctx = await read(paths.vaultContext, 3500);
   if (ctx) parts.push(`### Vault context\n${ctx}`);
+  // Loops come right after the vault context: the overall boot cap trims from the
+  // end, and open commitments matter more than observations or the rules index.
+  const loopsRaw = await readFull(paths.openLoops);
+  if (loopsRaw) {
+    const entries: LoopEntry[] = parseLoopsFile(loopsRaw);
+    const due = dueLoops(entries);
+    const dueIds = new Set(due.map((e) => e.id));
+    const others = activeLoops(entries).filter((e) => !dueIds.has(e.id));
+    const combined = [...due, ...others].slice(0, MAX_LOOP_ITEMS);
+    // Emit the section only when there's at least one due/active loop — an all-closed
+    // or empty ledger shouldn't cost boot budget for nothing to show.
+    if (combined.length) {
+      const lines = combined.map((e) => {
+        const label = dueIds.has(e.id) ? "due" : e.resurface ? `resurface ${e.resurface}` : "open";
+        return `- [${label}] ${e.title} (${e.id})`;
+      });
+      parts.push(cap(`### Open loops (due/active)\n${lines.join("\n")}`, MAX_LOOP_SECTION));
+    }
+  }
   const observed = await read(paths.observations, 2500);
   if (observed) parts.push(`### Observations about the user\n${observed}`);
 
@@ -115,23 +134,6 @@ export async function readBootContext(app: App, paths: ExoPaths, opts: BootOpts 
     if (rules.length) parts.push(`### Active rules (read the file for detail)\n${rules.join("\n")}`);
   }
 
-  const loopsRaw = await readFull(paths.openLoops);
-  if (loopsRaw) {
-    const entries: LoopEntry[] = parseLoopsFile(loopsRaw);
-    const due = dueLoops(entries);
-    const dueIds = new Set(due.map((e) => e.id));
-    const others = activeLoops(entries).filter((e) => !dueIds.has(e.id));
-    const combined = [...due, ...others].slice(0, MAX_LOOP_ITEMS);
-    // Emit the section only when there's at least one due/active loop — an all-closed
-    // or empty ledger shouldn't cost boot budget for nothing to show.
-    if (combined.length) {
-      const lines = combined.map((e) => {
-        const label = dueIds.has(e.id) ? "due" : e.resurface ? `resurface ${e.resurface}` : "open";
-        return `- [${label}] ${e.title} (${e.id})`;
-      });
-      parts.push(cap(`### Open loops (due/active)\n${lines.join("\n")}`, MAX_LOOP_SECTION));
-    }
-  }
 
   // Nothing to say at all (no sections AND no identity) → empty, exactly as before.
   if (!parts.length && !identity) return "";

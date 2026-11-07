@@ -156,3 +156,25 @@ describe("readBootContext — rules section prefers the index", () => {
     expect(out).toContain("- rule-verify-mario-bio");
   });
 });
+
+describe("readBootContext — loops survive the overall boot cap", () => {
+  it("keeps open loops when vault context, observations and rules fill the budget", async () => {
+    const big = "x".repeat(4000);
+    const loop: LoopEntry = {
+      id: "loop-budget",
+      title: "Loop that must reach the model",
+      openedAt: Date.parse("2026-11-01"),
+      openedRaw: "2026-11-01",
+      status: "open",
+      note: "",
+    } as LoopEntry;
+    const app = makeApp({
+      "AGENTS.md": { content: big },
+      "_system/identity/observations.md": { content: big },
+      "_system/memory/rules/_index.md": { content: big },
+      "_system/memory/loops.md": { content: formatLoop(loop) },
+    });
+    const out = await readBootContext(app, P);
+    expect(out).toContain("Loop that must reach the model");
+  });
+});
