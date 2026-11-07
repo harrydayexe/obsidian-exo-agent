@@ -173,8 +173,11 @@ describe("readBootContext — loops survive the overall boot cap", () => {
       "_system/identity/observations.md": { content: big },
       "_system/memory/rules/_index.md": { content: big },
       "_system/memory/loops.md": { content: formatLoop(loop) },
+      "_system/identity/SOUL.md": { content: "s".repeat(1500) },
+      "_system/identity/USER.md": { content: "u".repeat(2000) },
+      "_system/identity/NOW.md": { content: "n".repeat(3000) },
     });
-    const out = await readBootContext(app, P);
+    const out = await readBootContext(app, P, { identity: true });
     expect(out).toContain("Loop that must reach the model");
   });
 });
