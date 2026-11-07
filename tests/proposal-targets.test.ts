@@ -136,7 +136,7 @@ describe("OpenLoopProposalTarget", () => {
 });
 
 describe("DecisionProposalTarget", () => {
-  it("creates the dated slug path with raw-patched frontmatter and decision body", async () => {
+  it("creates the dated slug path with a spec 4.4 decision file", async () => {
     const { adapter, files, folders } = fakeVault();
     const target = new DecisionProposalTarget(adapter, vi.fn(), () => new Date(2026, 6, 20, 23, 30));
 
@@ -151,12 +151,12 @@ describe("DecisionProposalTarget", () => {
     const path = `${DECISIONS_DIR}/2026-07-20-require-explicit-accept.md`;
     expect(result).toEqual({ path });
     expect(files.get(path)).toBe(
-      `---\ntype: "decision"\ncreated_by: "exo"\ncreated: "2026-07-20"\ntags: ["type/decision"]\n---\n` +
-      `# Decision: Require Explicit Accept!\n\n` +
-      `## Contesto\nSuggestions remain inert.\n\n` +
-      `## Decisione\nRequire a user click.\n\n` +
-      `## Razionale\nPrevents surprise writes.\n`
-      + `\n${proposalMarker("proposal-decision")}\n`
+      `---\ndescription: "Require a user click."\nstatus: accepted\ndate: 2026-07-20\n---\n` +
+      `# Require Explicit Accept!\n\n` +
+      `## Context\nSuggestions remain inert.\n\n` +
+      `## Decision\nRequire a user click.\n\n` +
+      `## Trade-offs\nPrevents surprise writes.\n` +
+      `\n${proposalMarker("proposal-decision")}\n`
     );
     expect(folders).toContain(DECISIONS_DIR);
   });

@@ -6,7 +6,7 @@
  * the same shared queues used by the existing Open Loops and settings paths.
  */
 import { LOOPS_FILE_HEADER, parseLoopsFile, uniqueLoopId, writeLoops, type LoopEntry } from "../core/open-loops";
-import { patchFrontmatter } from "../core/frontmatter-patch";
+import { formatDecision } from "../core/decision-record";
 import { uniquePlaybookName } from "../core/learning-loop";
 import { exoPaths, DEFAULT_MEMORY_ROOT } from "../core/paths";
 import type { WriteQueue } from "../core/write-queue";
@@ -130,18 +130,7 @@ export class DecisionProposalTarget implements DecisionTarget {
       throw new Error(`Already exists: ${path}`);
     }
 
-    const body =
-      `# Decision: ${input.title}\n\n` +
-      `## Contesto\n${input.context}\n\n` +
-      `## Decisione\n${input.decision}\n\n` +
-      `## Razionale\n${input.rationale}\n\n` +
-      `${proposalMarker(input.proposalId)}\n`;
-    const content = patchFrontmatter(body, {
-      type: "decision",
-      created_by: "exo",
-      created: date,
-      tags: ["type/decision"],
-    });
+    const content = formatDecision({ ...input, date, marker: proposalMarker(input.proposalId) });
 
     await this.vault.ensureFolder(path);
     // `create` is the final collision guard. A race rejects here rather than
