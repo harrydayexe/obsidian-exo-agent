@@ -37,6 +37,10 @@ import {
   DEFAULT_AUTOMATION_COOLDOWN_MS,
 } from "../core/automation-model";
 import { automationSlug } from "./automation-store";
+import { blockTransitEntry } from "../core/block-transit";
+import { appendTransit, transitNote } from "../core/memory-harvest";
+import { loadBrainConfig } from "./brain-config";
+import { formatDecision } from "../core/decision-record";
 import { ok, err, ensureParentFolder, getExo, pluginInstance, today, type Result } from "./tool-kit";
 import { buildSaveTool } from "./save-tool";
 import { buildCorrectionTool } from "./corrections";
@@ -633,26 +637,12 @@ export function buildObsidianTools(app: App, opts?: ObsidianToolOpts): AnyTool[]
       rationale: z.string(),
       options: z.string().optional(),
       revisit: z.string().optional(),
-      domain: z.string().optional(),
     },
     async (args) => {
       const path = `${paths.decisions}/${today()}-${slugify(args.title)}.md`;
       if (app.vault.getAbstractFileByPath(path)) return err(`Already exists: ${path}`);
       await ensureParentFolder(app, path);
-      const body =
-        `# Decision: ${args.title}\n\n` +
-        `## Contesto\n${args.context}\n\n` +
-        (args.options ? `## Opzioni considerate\n${args.options}\n\n` : "") +
-        `## Decisione\n${args.decision}\n\n` +
-        `## Razionale\n${args.rationale}\n\n` +
-        (args.revisit ? `## Revisitare se\n${args.revisit}\n` : "");
-      const file = await app.vault.create(path, body);
-      await app.fileManager.processFrontMatter(file, (f: Record<string, unknown>) => {
-        f.type = "decision";
-        f.created_by = "exo";
-        f.created = today();
-        f.tags = ["type/decision", ...(args.domain ? [`domain/${args.domain.replace(/^#?domain\//, "")}`] : [])];
-      });
+      await app.vault.create(path, formatDecision({ ...args, date: today() }));
       return ok(`Captured decision → [[${path}]]`);
     }
   );
@@ -673,6 +663,21 @@ export function buildObsidianTools(app: App, opts?: ObsidianToolOpts): AnyTool[]
         return err(`Not written: ${args.block}.md needs a rationale. Call rethink_memory again with one.`);
       }
       try {
+        if ((await loadBrainConfig(app)).writers === "inbox") {
+          const target = `${paths.agentDir}/${args.block}.md`;
+          const file = app.vault.getAbstractFileByPath(target);
+          const current = file instanceof TFile ? await app.vault.cachedRead(file) : null;
+          const day = today();
+          const entry = blockTransitEntry({ target, content: args.new_content, rationale: args.rationale, current, date: day });
+          const inbox = `${paths.inbox}/${day}.md`;
+          const existing = app.vault.getAbstractFileByPath(inbox);
+          if (existing instanceof TFile) await app.vault.process(existing, (cur) => appendTransit(cur, entry));
+          else {
+            await ensureParentFolder(app, inbox);
+            await app.vault.create(inbox, appendTransit(transitNote(day), entry));
+          }
+          return ok(`${args.block}.md rewrite queued in [[${inbox}]]; the next dream places it.`);
+        }
         const status = await rethinkBridge({
           block: args.block,
           content: args.new_content,
