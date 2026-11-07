@@ -5,46 +5,85 @@ import {
   activeLoops,
   dueLoops,
   closeLoop,
+  uniqueLoopId,
+  writeLoops,
+  LOOPS_FILE_HEADER,
   type LoopEntry,
 } from "../src/core/open-loops";
+import { parseLoops } from "../src/vendor/cyber-brain/core.mjs";
 
-const T = Date.UTC(2024, 6, 3, 12, 0, 0); // 2024-07-03T12:00:00.000Z
+const T = Date.UTC(2024, 6, 3, 0, 0, 0); // 2024-07-03, the day precision `opened:` keeps
 
+/** A loop as it reads back from disk: `state` is always written, so it is always parsed. */
 function loop(over: Partial<LoopEntry> = {}): LoopEntry {
+  const status = over.status ?? "open";
   return {
     id: `loop-${T}`,
     title: "Follow up with Marco",
     note: "He asked for the pricing deck by Friday.",
     openedAt: T,
-    status: "open",
+    status,
+    state: status === "closed" ? "closed" : status === "waiting-user" ? "waiting for the user" : "open",
     ...over,
   };
 }
 
 describe("formatLoop / parseLoopsFile round-trip", () => {
-  it("round-trips a minimal open loop (no resurface, tags, closedAt)", () => {
+  it("round-trips a minimal open loop (no resurface, tags, owner)", () => {
     const e = loop();
     const parsed = parseLoopsFile(formatLoop(e));
     expect(parsed).toHaveLength(1);
     expect(parsed[0]).toEqual(e);
   });
 
-  it("round-trips resurface, tags and closedAt when present", () => {
+  it("round-trips resurface, tags, owner, state and a waiting-user status", () => {
     const e = loop({
       resurface: "2024-08-01",
       tags: ["career", "outreach"],
-      status: "closed",
-      closedAt: T + 1000,
+      status: "waiting-user",
+      owner: "user",
+      state: "waiting for the pricing numbers",
     });
     const parsed = parseLoopsFile(formatLoop(e));
     expect(parsed[0]).toEqual(e);
   });
 
-  it("omits resurface/tags/closed lines when absent", () => {
+  it("omits resurface/tags/owner lines when absent", () => {
     const block = formatLoop(loop());
     expect(block).not.toContain("resurface:");
     expect(block).not.toContain("tags:");
-    expect(block).not.toContain("closed:");
+    expect(block).not.toContain("owner:");
+  });
+
+  it("writes the kit's fields in the kit's order, with one state line", () => {
+    const block = formatLoop(loop({ resurface: "2024-08-01", status: "waiting-user", owner: "user", state: "waiting", tags: ["x"] }));
+    expect(block.split("\n").slice(0, 8)).toEqual([
+      "## loop-1719964800000",
+      "- title: Follow up with Marco",
+      "- opened: 2024-07-03",
+      "- resurface: 2024-08-01",
+      "- status: waiting-user",
+      "- owner: user",
+      "- state: waiting",
+      "- tags: x",
+    ]);
+  });
+
+  it("is read by the kit's own parser", () => {
+    const [kit] = parseLoops(formatLoop(loop({ status: "waiting-user", owner: "user", state: "waiting" })));
+    expect(kit.fields).toMatchObject({ status: "waiting-user", owner: "user", state: "waiting", opened: "2024-07-03" });
+    expect(kit.stateLines).toBe(1);
+  });
+
+  it("gives a loop with no state a state that matches its status", () => {
+    expect(formatLoop(loop({ status: "closed" }))).toContain("- state: closed");
+    expect(formatLoop(loop())).toContain("- state: open");
+  });
+
+  it("keeps waiting-user through a parse and a rewrite (it used to flatten to open)", () => {
+    const src = formatLoop(loop({ status: "waiting-user", owner: "user", state: "waiting" }));
+    expect(parseLoopsFile(src)[0].status).toBe("waiting-user");
+    expect(writeLoops(src, parseLoopsFile(src))).toBe(`${src}\n`);
   });
 
   it("preserves multi-line verbatim note including internal blank lines", () => {
@@ -54,8 +93,8 @@ describe("formatLoop / parseLoopsFile round-trip", () => {
   });
 
   it("round-trips several entries concatenated into one file", () => {
-    const a = loop({ id: "loop-1", openedAt: 1, note: "first" });
-    const b = loop({ id: "loop-2", openedAt: 2, note: "second\nmore", tags: ["x"] });
+    const a = loop({ id: "loop-1", openedAt: T, note: "first" });
+    const b = loop({ id: "loop-2", openedAt: T + 86_400_000, note: "second\nmore", tags: ["x"] });
     const file = [formatLoop(a), formatLoop(b)].join("\n\n");
     expect(parseLoopsFile(file)).toEqual([a, b]);
   });
@@ -134,25 +173,26 @@ describe("dueLoops, tickler / timezone-safe local-date logic", () => {
 
   it("excludes closed loops regardless of resurface date", () => {
     const now = new Date(2024, 6, 15);
-    const e = loop({ resurface: "2020-01-01", status: "closed", closedAt: T });
+    const e = loop({ resurface: "2020-01-01", status: "closed" });
     expect(dueLoops([e], now)).toEqual([]);
   });
 });
 
 describe("activeLoops", () => {
-  it("returns only open loops", () => {
+  it("returns every loop not closed: open and waiting-user", () => {
     const open = loop({ id: "loop-1" });
-    const closed = loop({ id: "loop-2", status: "closed", closedAt: T });
-    expect(activeLoops([open, closed])).toEqual([open]);
+    const waiting = loop({ id: "loop-3", status: "waiting-user" });
+    const closed = loop({ id: "loop-2", status: "closed" });
+    expect(activeLoops([open, waiting, closed])).toEqual([open, waiting]);
   });
 });
 
 describe("closeLoop, append-only close semantics", () => {
-  it("flips status to closed and sets closedAt, preserving the original note when no outcome is given", () => {
+  it("flips status to closed and dates the state, preserving the original note when no outcome is given", () => {
     const e = loop();
     const [closed] = closeLoop([e], e.id, undefined, T + 5000);
     expect(closed.status).toBe("closed");
-    expect(closed.closedAt).toBe(T + 5000);
+    expect(closed.state).toBe("closed 2024-07-03");
     expect(closed.note).toBe(e.note);
     expect(closed.id).toBe(e.id);
     expect(closed.title).toBe(e.title);
@@ -163,7 +203,9 @@ describe("closeLoop, append-only close semantics", () => {
     const e = loop();
     const [closed] = closeLoop([e], e.id, "Sent the deck, he replied thanks.", T + 5000);
     expect(closed.note).toContain(e.note);
-    expect(closed.note).toContain("Sent the deck, he replied thanks.");
+    expect(closed.note).toContain("Outcome 2024-07-03: Sent the deck, he replied thanks.");
+    expect(closed.state).toBe("closed 2024-07-03: Sent the deck, he replied thanks.");
+    expect(closed.owner).toBe(e.owner);
   });
 
   it("leaves other entries in the list untouched", () => {
@@ -251,10 +293,11 @@ describe("slug ids (hand-written ledger entries)", () => {
   });
 
   it("close_loop by slug id closes only that loop and keeps the rest", () => {
-    const closed = closeLoop(parseLoopsFile(MIXED), "loop-2026-09-08-clubjoy-14-set", "done", T);
+    const closed = closeLoop(parseLoopsFile(MIXED), "loop-2026-09-08-clubjoy-14-set", "done", Date.UTC(2026, 9, 25));
     expect(closed).toHaveLength(4);
     expect(closed[1].status).toBe("closed");
-    expect(closed[1].note).toContain("outcome: done");
+    expect(closed[1].note).toContain("Outcome 2026-10-25: done");
+    expect(closed[1].state).toBe("closed 2026-10-25: done");
     expect(closed[0].status).toBe("open");
     expect(closed[3].status).toBe("open");
   });
@@ -268,9 +311,9 @@ describe("slug ids (hand-written ledger entries)", () => {
     ]);
   });
 
-  it("a numeric-only ledger keeps the old output", () => {
+  it("a numeric-only ledger keeps its output", () => {
     const a = loop({ id: "loop-1", title: "A", note: "one" });
-    const b = loop({ id: "loop-2", title: "B", note: "two", status: "closed", closedAt: T + 5 });
+    const b = loop({ id: "loop-2", title: "B", note: "two", status: "closed" });
     const text = [a, b].map(formatLoop).join("\n\n") + "\n";
     const parsed = parseLoopsFile(text);
     expect(parsed).toEqual([a, b]);
@@ -333,7 +376,7 @@ describe("ledger fidelity: the writer never rewrites what the source wrote", () 
     "",
   ].join("\n");
 
-  const write = (es: LoopEntry[]) => `${es.map(formatLoop).join("\n\n")}\n`;
+  const write = (es: LoopEntry[], source = LEDGER) => writeLoops(source, es);
 
   it("a no-op write is byte-identical", () => {
     expect(write(parseLoopsFile(LEDGER))).toBe(LEDGER);
@@ -365,11 +408,19 @@ describe("ledger fidelity: the writer never rewrites what the source wrote", () 
     expect(after[1]).toContain("- opened: 2026-09-08\n");
   });
 
-  it("a new loop appended by code gets an ISO opened line and leaves the rest byte-identical", () => {
-    const fresh = loop({ id: "loop-1792000000000", openedAt: 1792000000000 });
+  it("a new loop appended by code gets a date opened line and the kit fields, and leaves the rest byte-identical", () => {
+    const fresh = loop({ id: "loop-new", openedAt: Date.UTC(2026, 9, 26), owner: "user" });
     const out = write([...parseLoopsFile(LEDGER), fresh]);
     expect(out.startsWith(LEDGER.trimEnd())).toBe(true);
-    expect(out).toContain(`- opened: ${new Date(1792000000000).toISOString()}`);
+    expect(out).toContain("- opened: 2026-10-26\n- status: open\n- owner: user\n- state: open");
+  });
+
+  it("keeps what precedes the first loop: frontmatter and heading", () => {
+    const file = `${LOOPS_FILE_HEADER}\n${formatLoop(loop())}\n`;
+    const closed = writeLoops(file, closeLoop(parseLoopsFile(file), loop().id, "done", T));
+    expect(closed.startsWith(LOOPS_FILE_HEADER)).toBe(true);
+    expect(closed).toContain("- status: closed");
+    expect(writeLoops(LOOPS_FILE_HEADER, [loop()]).startsWith(LOOPS_FILE_HEADER)).toBe(true);
   });
 
   it("unknown metadata lines do not end the run: a later status is read, and the lines are kept once", () => {
@@ -388,10 +439,20 @@ describe("ledger fidelity: the writer never rewrites what the source wrote", () 
     const [e] = parseLoopsFile(src);
     expect(e.status).toBe("closed");
     expect(e.resurface).toBe("2026-10-30");
-    const out = write([e]);
+    const out = write([e], src);
     expect(out.match(/^- owner: mario$/gm)).toHaveLength(1);
     expect(out.match(/^- priority: high$/gm)).toHaveLength(1);
     expect(out.match(/^## loop-2026-10-20-extra$/gm)).toHaveLength(1);
     expect(parseLoopsFile(out)[0]).toEqual(e);
+  });
+});
+
+describe("uniqueLoopId", () => {
+  it("is loop-<slug of the title>", () => {
+    expect(uniqueLoopId("Follow up: Marco's deck!", [])).toBe("loop-follow-up-marco-s-deck");
+  });
+  it("adds a numeric suffix while the ledger already has the id", () => {
+    expect(uniqueLoopId("Call Anna", ["loop-call-anna"])).toBe("loop-call-anna-2");
+    expect(uniqueLoopId("Call Anna", ["loop-call-anna", "loop-call-anna-2"])).toBe("loop-call-anna-3");
   });
 });

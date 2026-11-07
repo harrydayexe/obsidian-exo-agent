@@ -1,25 +1,28 @@
 /**
- * Agent run ledger — pure parser/serializer (no Obsidian imports).
+ * Agent run log, pure parser/serializer (no Obsidian imports).
  *
- * An append-only markdown record of every agent run, one file per month under
- * `paths.agentRuns`. Deliberately the same shape as the open-loops ledger
- * (`## id` + `- key: value` + free text): greppable, diffable, editable by a
- * human, and readable on a phone.
+ * The cyber-brain run record (../cyber-brain/SPEC.md section 4.5): one file per
+ * month under `paths.agentRuns`, one `## <time> <agent> <skill>` block per run
+ * and one `- write: <path> | <before> | <after>` receipt per changed line.
+ * Exo's own fields (name, trigger, tier, started, duration, report, restore)
+ * ride as extra `- key: value` lines the kit parser keeps in `fields`. The
+ * block shape is the kit's, so `brain.mjs check` and `dream` read Exo's runs
+ * and Exo reads theirs.
  *
- * This is the vault-native answer to Buzz's signed work. Exo writes the facts
- * (who ran, why, what changed, whether it worked); the agent writes judgment
- * into its own memory file. Neither writes the other's half.
+ * Exo writes the facts (who ran, why, what changed, whether it worked); the
+ * agent writes judgment into its own memory file. Neither writes the other's half.
  */
 
+import { SUMMARY_MAX, parseRuns } from "../vendor/cyber-brain/core.mjs";
 import { stripFrontmatter } from "./agents";
 
 export type AgentRunOutcome = "ok" | "failed" | "refused";
 
 export interface AgentRunRecord {
-  /** Sortable, unique: ISO instant + slug. */
+  /** The run's header line: `<time> <agent> work`. Unique per agent and second. */
   id: string;
   slug: string;
-  /** Display name at the time of the run — names drift, records should not. */
+  /** Display name at the time of the run: names drift, records should not. */
   name: string;
   startedAt: number;
   durationMs: number;
@@ -30,7 +33,7 @@ export interface AgentRunRecord {
   tier: string;
   /** Vault path of the run report, when one was written. */
   report?: string;
-  /** Vault paths the run wrote. */
+  /** The run's `write:` receipts, each `<path> | <before> | <after>`. */
   writes: string[];
   /**
    * Id of the checkpoint record backing "Restore" for this run, when it wrote.
@@ -42,107 +45,142 @@ export interface AgentRunRecord {
   restoreId?: string;
   /**
    * Who asked. `exo` for a trigger or a human; an agent slug when this run was
-   * delegated by another agent — the attribution chain that makes agent↔agent
-   * work auditable instead of anonymous.
+   * delegated by another agent: the attribution chain that makes agent-to-agent
+   * work auditable instead of anonymous. On disk `exo` is `user` (manual) or
+   * `schedule`, the kit's values.
    */
   by: string;
   /** One-line summary, when the run produced one. */
   summary?: string;
 }
 
-/** `2026-08.md` — the ledger file a given instant belongs to. */
+/** `2026-08.md`: the log file a given instant belongs to. */
 export function ledgerFileName(at: number): string {
   const d = new Date(at);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}.md`;
 }
 
+/** A new month file: the description line every system file carries. */
+export function ledgerHeader(at: number): string {
+  const month = ledgerFileName(at).replace(/\.md$/, "");
+  return `---\ndescription: Run log for ${month}, one record per agent run with the exact lines written. Open to review or undo a write.\nsensitivity: personal\n---\n# Runs ${month}\n`;
+}
+
 export function agentRunId(slug: string, startedAt: number): string {
-  return `${new Date(startedAt).toISOString()}·${slug}`;
+  return `${new Date(startedAt).toISOString()}\u00b7${slug}`;
 }
 
 const esc = (s: string) => s.replace(/\r?\n/g, " ").trim();
+const clamp = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}\u2026` : s);
 
-/** One record as a markdown block. Always ends with a blank line so appends
+/** The header of a run's block: `2026-11-07T15:20:11Z <agent> work` (kit shape). */
+export function runHeader(slug: string, startedAt: number): string {
+  return `${new Date(startedAt).toISOString().replace(/\.\d{3}Z$/, "Z")} ${slug} work`;
+}
+
+/** The kit's `by`: Exo's own trigger is the user when manual, else the schedule. */
+function diskBy(r: AgentRunRecord): string {
+  return r.by === "exo" ? (r.trigger === "manual" ? "user" : "schedule") : r.by;
+}
+
+/** One record as a markdown block. Always starts with a blank line so appends
  *  concatenate cleanly without a read-modify-write of the whole file. */
 export function serializeAgentRun(r: AgentRunRecord): string {
-  const lines = [
-    `## ${r.id}`,
+  const summary = r.summary ?? `${r.name} ${r.outcome === "ok" ? "ran" : r.outcome} (${r.trigger})`;
+  return [
+    "",
+    `## ${runHeader(r.slug, r.startedAt)}`,
     `- agent: ${r.slug}`,
+    `- by: ${diskBy(r)}`,
+    `- outcome: ${r.outcome}`,
+    `- summary: ${clamp(esc(summary), SUMMARY_MAX)}`,
     `- name: ${esc(r.name)}`,
     `- trigger: ${esc(r.trigger)}`,
     `- tier: ${r.tier}`,
-    `- outcome: ${r.outcome}`,
     `- started: ${new Date(r.startedAt).toISOString()}`,
     `- duration: ${Math.max(0, Math.round(r.durationMs / 1000))}s`,
-    `- by: ${r.by}`,
     ...(r.report ? [`- report: ${r.report}`] : []),
     ...(r.restoreId ? [`- restore: ${r.restoreId}`] : []),
-    `- writes: ${r.writes.length ? r.writes.join(", ") : "(none)"}`,
+    ...r.writes.map((w) => `- write: ${w}`),
     "",
-    ...(r.summary ? [esc(r.summary), ""] : []),
-  ];
-  return lines.join("\n");
+  ].join("\n");
 }
 
-function parseField(block: string, key: string): string | undefined {
-  const m = block.match(new RegExp(`^- ${key}:[ \\t]*(.*)$`, "m"));
-  const v = m?.[1]?.trim();
-  return v || undefined;
-}
-
-/** Parse a ledger file. Unknown or malformed blocks are skipped, never thrown —
- *  a hand-edited ledger must degrade, not break the pane that reads it. */
+/** Parse a log file. Unknown or malformed blocks are skipped, never thrown: a
+ *  hand-edited log must degrade, not break the pane that reads it. */
 export function parseAgentLedger(raw: string): AgentRunRecord[] {
   const out: AgentRunRecord[] = [];
-  // Split on headings, keeping each heading with its body.
-  const blocks = raw.split(/^## /m).slice(1);
-  for (const chunk of blocks) {
-    const nl = chunk.indexOf("\n");
-    const id = (nl === -1 ? chunk : chunk.slice(0, nl)).trim();
-    const body = nl === -1 ? "" : chunk.slice(nl + 1);
-    const slug = parseField(body, "agent");
-    const started = parseField(body, "started");
-    if (!id || !slug || !started) continue;
-    const startedAt = Date.parse(started);
-    if (!Number.isFinite(startedAt)) continue;
-
-    const outcomeRaw = parseField(body, "outcome");
-    const outcome: AgentRunOutcome =
-      outcomeRaw === "ok" || outcomeRaw === "failed" || outcomeRaw === "refused" ? outcomeRaw : "failed";
-
-    const writesRaw = parseField(body, "writes");
-    const writes =
-      !writesRaw || writesRaw === "(none)"
-        ? []
-        : writesRaw.split(",").map((w) => w.trim()).filter(Boolean);
-
-    const durationRaw = parseField(body, "duration") ?? "0s";
-    const seconds = Number.parseInt(durationRaw, 10);
-
-    // Free text after the field block is the summary.
-    const summary = body
-      .split(/\r?\n/)
-      .filter((l) => l.trim() && !l.startsWith("- "))
-      .join(" ")
-      .trim();
-
+  for (const run of parseRuns(raw)) {
+    const f = run.fields;
+    const slug = f.agent;
+    // `started` is Exo's own millisecond stamp; a kit-written record only has the header time.
+    const startedAt = Date.parse(f.started || run.header.split(" ")[0]);
+    if (!slug || !Number.isFinite(startedAt)) continue;
+    const outcome: AgentRunOutcome = f.outcome === "ok" || f.outcome === "failed" || f.outcome === "refused" ? f.outcome : "failed";
+    const seconds = Number.parseInt(f.duration ?? "0s", 10);
+    const by = !f.by || f.by === "user" || f.by === "schedule" ? "exo" : f.by;
     out.push({
-      id,
+      id: run.header,
       slug,
-      name: parseField(body, "name") ?? slug,
+      name: f.name || slug,
       startedAt,
       durationMs: Number.isFinite(seconds) ? seconds * 1000 : 0,
       outcome,
-      trigger: parseField(body, "trigger") ?? "unknown",
-      tier: parseField(body, "tier") ?? "propose",
-      report: parseField(body, "report"),
-      ...(parseField(body, "restore") ? { restoreId: parseField(body, "restore") } : {}),
-      writes,
-      by: parseField(body, "by") ?? "exo",
-      ...(summary ? { summary } : {}),
+      trigger: f.trigger || "unknown",
+      tier: f.tier || "propose",
+      ...(f.report ? { report: f.report } : {}),
+      ...(f.restore ? { restoreId: f.restore } : {}),
+      writes: run.writes,
+      by,
+      ...(f.summary ? { summary: f.summary } : {}),
     });
   }
   return out;
+}
+
+/** The path a `write:` receipt names. */
+export const receiptPath = (receipt: string): string => receipt.split(" | ")[0];
+
+const RECEIPT_MAX_PER_FILE = 40;
+/** A line as a receipt field: a pipe would split the field, so it is escaped. */
+const flat = (line: string): string => line.trim().replace(/\|/g, "\\|");
+
+/**
+ * The `write:` receipts for one file a run changed (spec 4.5): one per changed
+ * line, `<path> | <before> | <after>`, blank lines never logged. A new file is
+ * `(new file)` with its first line as the after; a removed file `(deleted)`.
+ * The changed middle is paired line by line, capped at {@link RECEIPT_MAX_PER_FILE}.
+ */
+export function lineReceipts(path: string, before: string | null, after: string | null): string[] {
+  const lines = (text: string): string[] => text.split(/\r?\n/);
+  if (before === null) {
+    const first = lines(after ?? "").find((l) => l.trim());
+    return [`${path} | (new file) | ${first ? flat(first) : "(none)"}`];
+  }
+  if (after === null) {
+    const first = lines(before).find((l) => l.trim());
+    return [`${path} | ${first ? flat(first) : "(none)"} | (deleted)`];
+  }
+  const a = lines(before);
+  const b = lines(after);
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) tail++;
+  const was = a.slice(head, a.length - tail);
+  const now = b.slice(head, b.length - tail);
+  const out: string[] = [];
+  for (let i = 0; i < Math.max(was.length, now.length); i++) {
+    const x = (was[i] ?? "").trim();
+    const y = (now[i] ?? "").trim();
+    if (x === y) continue;
+    out.push(`${path} | ${x ? flat(x) : "(none)"} | ${y ? flat(y) : "(none)"}`);
+  }
+  if (out.length > RECEIPT_MAX_PER_FILE) {
+    const more = out.length - RECEIPT_MAX_PER_FILE;
+    return [...out.slice(0, RECEIPT_MAX_PER_FILE), `${path} | (${more} more changed lines) | (see the file)`];
+  }
+  return out.length ? out : [`${path} | (none) | (none)`];
 }
 
 /** Newest first — the order every consumer wants. */

@@ -11,10 +11,9 @@
  * All paths derive from the caller-supplied `ExoPaths` (core/paths.ts), so the
  * root is configurable and the module stays pure/testable.
  *
- * The "full" preset also lays down the marioverse knowledge-OS: guided
- * templates for vault-context/preferences/mental-model, README-documented
- * rules/decisions folders, and hand-fillable `agent/{SOUL,USER,
- * NOW}.md` kernel blocks. The blocks carry a template marker so the "Agent Is
+ * The "full" preset also lays down the spec's knowledge layer: the
+ * observations note, README-documented rules/decisions folders, and
+ * hand-fillable `identity/{SOUL,USER,NOW}.md` kernel blocks. The blocks carry a template marker so the "Agent Is
  * the Folder" seeder regenerates them while untouched (isUnfilledAgentBlock) yet
  * never clobbers hand-written identity — that's why pre-creating them is now
  * safe, where a blank stub would once have looked already-seeded.
@@ -25,6 +24,7 @@
 
 import type { ExoPaths } from "./paths";
 import { AGENT_BLOCK_NAMES, agentBlockTemplate } from "./agent-self";
+import { LOOPS_FILE_HEADER } from "./open-loops";
 
 export type ScaffoldKind = "folder" | "file";
 
@@ -64,13 +64,11 @@ function allScaffoldItems(paths: ExoPaths): ScaffoldItem[] {
     // ── mechanism (minimal + full) ─────────────────────────────────────────
     { path: paths.queue, kind: "folder", tier: "mechanism" },
     { path: paths.reports, kind: "folder", tier: "mechanism" },
-    { path: paths.openLoops, kind: "file", tier: "mechanism", content: heading("Open loops", "_Nothing tracked yet._") },
+    { path: paths.openLoops, kind: "file", tier: "mechanism", content: LOOPS_FILE_HEADER },
     // ── content (full only): guided templates + the knowledge-OS folders ────
     { path: `${paths.rules}/README.md`, kind: "file", tier: "content", content: FOLDER_README.rules },
     { path: `${paths.decisions}/README.md`, kind: "file", tier: "content", content: FOLDER_README.decisions },
-    { path: paths.preferences, kind: "file", tier: "content", content: PREFERENCES_TEMPLATE },
-    { path: paths.mentalModel, kind: "file", tier: "content", content: MENTAL_MODEL_TEMPLATE },
-    { path: paths.vaultContext, kind: "file", tier: "content", content: VAULT_CONTEXT_TEMPLATE },
+    { path: paths.observations, kind: "file", tier: "content", content: OBSERVATIONS_TEMPLATE },
     // Identity blocks: guided, hand-fillable templates that "Seed agent folder"
     // regenerates while untouched (isUnfilledAgentBlock) and never clobbers once
     // edited. Path derives from paths.agentDir.
@@ -94,20 +92,14 @@ const FOLDER_README = {
   ),
 } as const;
 
-const PREFERENCES_TEMPLATE = heading(
-  "Preferences",
-  "How you like Exo to communicate and work — language(s), tone, level of detail, formatting, things to always or never do. Exo reads this at boot and refines it as you correct it."
-);
+const OBSERVATIONS_TEMPLATE = `---
+description: Append-only observations about the user: preferences, habits, ways of deciding. Open to see what agents learned about you.
+sensitivity: personal
+---
+# Observations
 
-const MENTAL_MODEL_TEMPLATE = heading(
-  "Mental model",
-  "How you think — the frames, heuristics, and vocabulary you reason with. A source the “Seed agent folder” command distils into the agent's persona."
-);
-
-const VAULT_CONTEXT_TEMPLATE = heading(
-  "Vault context",
-  "What this vault is for and its current state — the map Exo reads first. Say what lives where, what you're working on, and any conventions. Exo keeps this current as you work."
-);
+One fact per line: \`- <observation> [source: <where>; since: YYYY-MM-DD]\`. Exo reads this at boot and appends to it; the weekly review rebuilds USER.md from it.
+`;
 
 /** The create-only-if-absent scaffold for a given memory root and preset.
  *  `minimal` yields the mechanism items; `full` yields all of them. (`none`
@@ -127,15 +119,12 @@ export function parentFolder(path: string): string | null {
   return i === -1 ? null : path.slice(0, i);
 }
 
-/** True when the vault already has Exo's memory layer set up — detected via the
- *  vault-context file. This is the LEGACY fallback for installs that predate
- *  the onboarding picker (they never recorded a `memorySetup` choice but do
- *  have the layer). `exists` is injected so this stays pure and testable
- *  without an Obsidian App. Note: a `minimal` install has no vault-context, so
- *  this returns false for it — that's why the picker gates on `memorySetup`
- *  first (see `memorySetupNeeded`), not on this check alone. */
+/** True when the vault already has Exo's memory layer set up, detected via
+ *  the loops file both presets create. Covers installs that never recorded a
+ *  `memorySetup` choice but have the layer. `exists` is injected so this stays
+ *  pure and testable without an Obsidian App. */
 export function isVaultSetUp(exists: (path: string) => boolean, paths: ExoPaths): boolean {
-  return exists(paths.vaultContext);
+  return exists(paths.openLoops);
 }
 
 /** Whether to offer the onboarding picker. Offered only when the user hasn't

@@ -76,7 +76,7 @@ describe("collectDailyPulseInput", () => {
       { path: "Active/Older.md", mtime: LAST_PULSE_AT - 1 },
       { path: "Active/Future.md", mtime: NOW + 1 },
       { path: ".obsidian/plugins/exo-agent/proposals.json", mtime: NOW - 2_000 },
-      { path: "_system/review.md", mtime: NOW - 3_000 },
+      { path: "System/review.md", mtime: NOW - 3_000 },
       { path: "Resources/_artifacts/generated.md", mtime: NOW - 4_000 },
       { path: "Active/not-a-note.pdf", mtime: NOW - 5_000 },
     ]);

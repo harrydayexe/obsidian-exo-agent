@@ -47,7 +47,9 @@ import {
   isUnfilledAgentBlock,
 } from "./core/agent-self";
 import { scaffoldItems, parentFolder, type MemorySetup } from "./core/vault-setup";
-import { detectMemoryRoot, exoPaths, LEGACY_MEMORY_ROOT, type ExoPaths } from "./core/paths";
+import { exoPaths, type ExoPaths } from "./core/paths";
+import { DEFAULT_BRAIN, dailyNoteFor, type BrainConfig } from "./core/brain-config";
+import { loadBrainConfig } from "./obsidian/brain-config";
 import { resetIfNewDay, canSpend, recordSpend } from "./core/background-budget";
 import { runHeadlessPlaybook, writeReport, restoreRun, type HeadlessOpts, type HeadlessResult } from "./headless";
 import { automationLastRunKey, migrateScheduledRuns, pruneRuns, type AutomationConfig, type AutomationRunRecord } from "./core/automations";
@@ -229,6 +231,8 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
    * read-modify-write cycle on the same note (w1-1 contract).
    */
   readonly memoryWriteQueue = new WriteQueue();
+  /** The vault's cyber-brain configuration (AGENTS.md frontmatter), read at load. */
+  brain: BrainConfig = DEFAULT_BRAIN;
   /** Automatic memory: the harvester and its record of recent harvests
    *  (built in onload by `registerMemory`, obsidian/memory-wiring). */
   memoryHarvest!: MemoryHarvester;
@@ -267,7 +271,7 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
    */
   agentStore!: AgentStore;
   /** Unified automations — one readable file per automation under
-   *  `<memoryRoot>/automations/`. Loaded at layout-ready; watched thereafter. */
+   *  `<system>/automations/`. Loaded at layout-ready; watched thereafter. */
   automationStore!: AutomationStore;
   private agentRefresh: Promise<void> | null = null;
   /** Event-driven agent triggers. Disarmed until layout-ready. */
@@ -1261,11 +1265,10 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
     };
 
     const sources = {
-      mentalModel: await readSource(this.paths.mentalModel),
-      preferences: await readSource(this.paths.preferences),
+      observations: await readSource(this.paths.observations),
       vaultContext: await readSource(this.paths.vaultContext),
     };
-    if (!sources.mentalModel && !sources.preferences && !sources.vaultContext) {
+    if (!sources.observations && !sources.vaultContext) {
       new Notice(`Nothing to seed from — the ${this.paths.root}/ source files are empty or missing.`);
       return;
     }
@@ -1332,11 +1335,11 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
     }
   }
 
-  /** Exo's memory-layer paths, derived from the configured `memoryRoot`. Single
+  /** Exo's memory-layer paths, derived from the vault's `AGENTS.md` (`paths.system`). Single
    *  accessor so every consumer resolves the same paths without re-reading a
    *  literal — the vault's structure lives in one place (core/paths.ts). */
   get paths(): ExoPaths {
-    return exoPaths(this.settings.memoryRoot);
+    return exoPaths(this.brain.system);
   }
 
   /**
@@ -1617,15 +1620,7 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
       this.settings.codexApproval = "on-request";
       await this.saveSettings();
     }
-    // Memory-root auto-detect (one-shot): a vault that already has a legacy-root
-    // layer keeps it — existing installs (marioverse included) never migrate —
-    // while a fresh vault adopts the neutral, tool-owned `_exo/`. Persisted so
-    // it's stable and user-overridable in Settings thereafter.
-    if (!this.settings.memoryRoot) {
-      const hasLegacy = await this.app.vault.adapter.exists(LEGACY_MEMORY_ROOT);
-      this.settings.memoryRoot = detectMemoryRoot(hasLegacy);
-      await this.saveSettings();
-    }
+    this.brain = await loadBrainConfig(this.app); // AGENTS.md frontmatter: system folder, writers, daily notes
     const savedPulseState = this.settings.dailyPulseReviewState;
     this.settings.dailyPulseReviewState = {
       ...DEFAULT_SETTINGS.dailyPulseReviewState,
@@ -2573,7 +2568,7 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
         tier: agent.contract.autonomy,
         ...(path ? { report: path } : {}),
         ...(restoreId ? { restoreId } : {}),
-        writes: result.writes,
+        writes: await this.agentStore.receipts(result),
         by,
         ...(substantive ? {} : { summary: "Nothing to report." }),
       });
@@ -2619,9 +2614,9 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
   private async journalAgentRun(agent: AgentDef, output: string, at: number): Promise<boolean> {
     const summary = extractJournalLine(output);
     if (!summary) return false;
-    const path = todayDailyNotePath(this.app);
+    const path = dailyNoteFor(this.brain.dailyNotes, at) || todayDailyNotePath(this.app);
     if (!path) return false;
-    return this.agentStore.appendJournal(path, journalLine(agent.brain.name, at, summary));
+    return this.agentStore.appendJournal(path, journalLine(agent.brain.name, at, summary), this.brain.dailyHeading);
   }
 
   /**
@@ -2690,7 +2685,7 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
     }
     const agents = this.agentStore.list();
     if (!agents.length) {
-      new Notice("No agents found. Canonical vault agents live in _system/agents/<slug>/ bundles.");
+      new Notice("No agents found. Canonical vault agents live in <system folder>/agents/<slug>/ bundles.");
       return;
     }
     new AgentPicker(this.app, agents, (agent) => {

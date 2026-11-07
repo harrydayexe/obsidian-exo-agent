@@ -181,7 +181,7 @@ export async function buildDescIndex(app: App): Promise<DescIndex> {
  *  each surface rolling its own frontmatter regex. Never throws. */
 export async function listAgentBrains(
   app: App,
-  vaultAgentsDir = "_system/agents"
+  vaultAgentsDir: string
 ): Promise<{ slug: string; path: string; raw: string; source: AgentSource }[]> {
   const out: { slug: string; path: string; raw: string; source: AgentSource }[] = [];
 

@@ -30,9 +30,16 @@ describe("scaffoldItems", () => {
     expect(new Set(paths).size).toBe(paths.length);
   });
 
-  it("includes the vault-context.md sentinel as a file item (full only)", () => {
-    const item = scaffoldItems(LEGACY, "full").find((i) => i.path === LEGACY.vaultContext);
-    expect(item?.kind).toBe("file");
+  it("includes the loops file as a file item with a description (both presets)", () => {
+    for (const preset of ["minimal", "full"] as const) {
+      const item = scaffoldItems(LEGACY, preset).find((i) => i.path === LEGACY.openLoops);
+      expect(item?.kind).toBe("file");
+      expect(item?.content).toMatch(/^---\ndescription: /);
+    }
+  });
+
+  it("never scaffolds AGENTS.md: it is the vault's entry point, written by cyber-brain setup", () => {
+    expect(scaffoldItems(LEGACY, "full").map((i) => i.path)).not.toContain(LEGACY.vaultContext);
   });
 
   it("never scaffolds review.md — its existence is a UI signal owned by another feature", () => {
@@ -63,19 +70,16 @@ describe("scaffoldItems presets", () => {
     // mechanism present
     expect(minimal).toContain(LEGACY.queue);
     expect(minimal).toContain(LEGACY.openLoops);
-    // no content whatsoever — no vault-context, preferences, or agent identity
+    // no content whatsoever: no observations, rules or agent identity
     expect(minimal.some((p) => p.startsWith(`${LEGACY.rules}/`))).toBe(false);
-    expect(minimal).not.toContain(LEGACY.vaultContext);
-    expect(minimal).not.toContain(LEGACY.preferences);
+    expect(minimal).not.toContain(LEGACY.observations);
     expect(minimal.some((p) => p.startsWith(`${LEGACY.agentDir}/`))).toBe(false);
   });
 
   it("full lays down the knowledge-OS: guided sources, folder READMEs, agent blocks", () => {
     const full = scaffoldItems(LEGACY, "full").map((i) => i.path);
     // guided source files
-    expect(full).toContain(LEGACY.vaultContext);
-    expect(full).toContain(LEGACY.preferences);
-    expect(full).toContain(LEGACY.mentalModel);
+    expect(full).toContain(LEGACY.observations);
     // folder READMEs (the folders exist by virtue of a file inside them)
     expect(full).toContain(`${LEGACY.rules}/README.md`);
     expect(full).toContain(`${LEGACY.decisions}/README.md`);
@@ -86,7 +90,7 @@ describe("scaffoldItems presets", () => {
   });
 
   it("full agent blocks are seeded template content (round-trips through isUnfilledAgentBlock)", () => {
-    const blocks = scaffoldItems(LEGACY, "full").filter((i) => i.path.startsWith(`${LEGACY.agentDir}/`));
+    const blocks = scaffoldItems(LEGACY, "full").filter((i) => i.path.startsWith(`${LEGACY.agentDir}/`) && i.path !== LEGACY.observations);
     expect(blocks).toHaveLength(3);
     for (const b of blocks) {
       const name = b.path.slice(`${LEGACY.agentDir}/`.length, -".md".length) as "SOUL" | "USER" | "NOW";
@@ -115,12 +119,12 @@ describe("memorySetupNeeded", () => {
 });
 
 describe("isVaultSetUp", () => {
-  it("is false when vault-context.md is absent", () => {
+  it("is false when the loops file is absent", () => {
     expect(isVaultSetUp(() => false, LEGACY)).toBe(false);
   });
 
-  it("is true when vault-context.md exists", () => {
-    expect(isVaultSetUp((path) => path === LEGACY.vaultContext, LEGACY)).toBe(true);
+  it("is true when the loops file exists", () => {
+    expect(isVaultSetUp((path) => path === LEGACY.openLoops, LEGACY)).toBe(true);
   });
 
   it("only checks the sentinel path, ignoring others", () => {
@@ -128,14 +132,14 @@ describe("isVaultSetUp", () => {
   });
 
   it("respects the configured root (a _system sentinel doesn't satisfy an _exo vault)", () => {
-    expect(isVaultSetUp((path) => path === "_system/vault-context.md", FRESH)).toBe(false);
-    expect(isVaultSetUp((path) => path === FRESH.vaultContext, FRESH)).toBe(true);
+    expect(isVaultSetUp((path) => path === LEGACY.openLoops, FRESH)).toBe(false);
+    expect(isVaultSetUp((path) => path === FRESH.openLoops, FRESH)).toBe(true);
   });
 });
 
 describe("parentFolder", () => {
   it("returns the parent directory for a nested path", () => {
-    expect(parentFolder("_system/memory/preferences/preferences.md")).toBe("_system/memory/preferences");
+    expect(parentFolder("_system/memory/rules/README.md")).toBe("_system/memory/rules");
   });
 
   it("returns null for a top-level path with no slash", () => {

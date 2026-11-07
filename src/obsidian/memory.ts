@@ -96,8 +96,8 @@ export async function readBootContext(app: App, paths: ExoPaths, opts: BootOpts 
   const parts: string[] = [];
   const ctx = await read(paths.vaultContext, 3500);
   if (ctx) parts.push(`### Vault context\n${ctx}`);
-  const prefs = await read(paths.preferences, 2500);
-  if (prefs) parts.push(`### Preferences\n${prefs}`);
+  const observed = await read(paths.observations, 2500);
+  if (observed) parts.push(`### Observations about the user\n${observed}`);
 
   // The index carries the trigger for each rule (when to load it) — a bare file-name
   // list never does, so the model can't tell which rules apply without reading every
@@ -177,7 +177,7 @@ function preambleKey(app: App, inputs: PreambleInputs): string {
   const { paths } = inputs;
   const sources = [
     paths.vaultContext,
-    paths.preferences,
+    paths.observations,
     `${paths.rules}/_index.md`,
     paths.openLoops,
     ...AGENT_BLOCKS.map((spec) => `${paths.agentDir}/${spec.name}.md`),

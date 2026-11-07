@@ -14,11 +14,11 @@ import {
   serializeIgnoreStore,
   type IgnoreStore,
 } from "./store-core";
-import { exoPaths, LEGACY_MEMORY_ROOT } from "../core/paths";
+import { exoPaths, DEFAULT_MEMORY_ROOT } from "../core/paths";
 
 /** Default mentions dir — the legacy location for tests/fallback; live
  *  callers pass the configured `paths.mentions`. */
-const LEGACY_IGNORE_DIR = exoPaths(LEGACY_MEMORY_ROOT).mentions;
+const LEGACY_IGNORE_DIR = exoPaths(DEFAULT_MEMORY_ROOT).mentions;
 const ignorePath = (dir: string) => `${dir}/ignore.json`;
 
 export async function loadIgnoreStore(app: App, dir: string = LEGACY_IGNORE_DIR): Promise<IgnoreStore> {

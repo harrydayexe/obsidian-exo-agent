@@ -162,15 +162,14 @@ describe("compileIdentity", () => {
 
 describe("buildSeedPrompt", () => {
   const sources = {
-    mentalModel: "Mario is a 0-to-1 PM.",
-    preferences: "Direct, no filler.",
+    observations: "Mario is a 0-to-1 PM. Direct, no filler.",
     vaultContext: "marioverse.ai vault.",
   };
 
   it("includes all three source sections and the per-block limits", () => {
     const p = buildSeedPrompt(sources);
     expect(p).toContain("Mario is a 0-to-1 PM.");
-    expect(p).toContain("Direct, no filler.");
+    expect(p).toContain("no filler");
     expect(p).toContain("marioverse.ai vault.");
     expect(p).toContain("1500"); // persona/now limit
     expect(p).toContain("2000"); // human limit
@@ -210,13 +209,14 @@ describe("parseSeedBlocks", () => {
 });
 
 describe("manifestContent", () => {
-  it("documents the block registry and the read-don't-write contract", () => {
+  it("documents the block registry and the writers contract", () => {
     const m = manifestContent();
     expect(m).toContain("SOUL.md");
     expect(m).toContain("USER.md");
     expect(m).toContain("NOW.md");
-    expect(m).toMatch(/read.*don'?t write/i);
-    expect(m).toContain("Exo owns maintenance");
+    expect(m).toMatch(/any agent may write/i);
+    expect(m).toContain("rethink_memory");
+    expect(m).toContain("writers: direct");
   });
 });
 

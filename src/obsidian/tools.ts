@@ -3,13 +3,16 @@ import * as z from "zod";
 import { en } from "zod/locales";
 import { claudeSdk } from "../providers/sdk-loader";
 import { resolveLink, neighborhood, basename } from "./graph";
-import { exoPaths, LEGACY_MEMORY_ROOT, type ExoPaths } from "../core/paths";
+import { exoPaths, DEFAULT_MEMORY_ROOT, type ExoPaths } from "../core/paths";
 import { gatherConnections, linkMentionsIn, defaultExcludePrefixes } from "../mentions/connections";
 import { loadIgnoreStore, ignoreMention } from "../mentions/ignore-store";
 import { fold } from "../mentions/tokenizer";
 import {
   formatLoop,
   parseLoopsFile,
+  uniqueLoopId,
+  writeLoops,
+  LOOPS_FILE_HEADER,
   activeLoops,
   dueLoops,
   closeLoop,
@@ -198,7 +201,7 @@ export function buildObsidianTools(app: App, opts?: ObsidianToolOpts): AnyTool[]
     /** View-side bridge that enacts a `rethink_memory` request: writes the block
      *  directly and renders the feed diff+undo. Absent → the tool is not registered. */
     rethinkBridge,
-    paths = exoPaths(LEGACY_MEMORY_ROOT),
+    paths = exoPaths(DEFAULT_MEMORY_ROOT),
     agentCaller = EXO_CALLER,
     onSaved,
     runName,
@@ -708,35 +711,44 @@ export function buildObsidianTools(app: App, opts?: ObsidianToolOpts): AnyTool[]
         .regex(RESURFACE_RE, "resurface must be YYYY-MM-DD")
         .optional(),
       tags: z.array(z.string()).optional(),
+      status: z.enum(["open", "waiting-user"]).optional().describe("waiting-user when the next step is the user's. Default open."),
+      owner: z.string().optional().describe("Who must act: user or an agent. Default user."),
+      state: z.string().optional().describe("One line on where it stands. Default open."),
     },
     async (args) => {
-      const openedAt = Date.now();
-      const entry: LoopEntry = {
-        id: `loop-${openedAt}`,
-        title: args.title,
-        note: args.context,
-        openedAt,
-        status: "open",
-        ...(args.resurface ? { resurface: args.resurface } : {}),
-        ...(args.tags && args.tags.length ? { tags: args.tags } : {}),
-      };
-      const block = formatLoop(entry);
+      let entry: LoopEntry | undefined;
       await loopsWriteQueue.enqueue(async () => {
+        const make = (cur: string): string => {
+          const entries = cur ? parseLoopsFile(cur) : [];
+          entry = {
+            id: uniqueLoopId(args.title, entries.map((e) => e.id)),
+            title: args.title,
+            note: args.context,
+            openedAt: Date.now(),
+            status: args.status ?? "open",
+            owner: args.owner ?? "user",
+            ...(args.state ? { state: args.state } : {}),
+            ...(args.resurface ? { resurface: args.resurface } : {}),
+            ...(args.tags && args.tags.length ? { tags: args.tags } : {}),
+          };
+          return `${cur.replace(/\s+$/, "")}\n\n${formatLoop(entry)}\n`;
+        };
         const existing = app.vault.getAbstractFileByPath(paths.openLoops);
         if (existing instanceof TFile) {
-          await app.vault.process(existing, (cur) => `${cur.replace(/\s+$/, "")}\n\n${block}\n`);
+          await app.vault.process(existing, make);
         } else {
           await ensureParentFolder(app, paths.openLoops);
-          await app.vault.create(paths.openLoops, `${block}\n`);
+          await app.vault.create(paths.openLoops, make(LOOPS_FILE_HEADER));
         }
       });
+      if (!entry) return err("Failed to open the loop.");
       return ok(`Opened ${entry.id}: ${entry.title}${entry.resurface ? ` (resurfaces ${entry.resurface})` : ""}.`);
     }
   );
 
   const closeLoopTool = tool(
     "close_loop",
-    "Close an open loop by id (from `open_loop` or `list_loops`). The entry is never deleted — it's kept in the ledger with status=closed and, if given, an appended outcome note.",
+    "Close an open loop by id (from `open_loop` or `list_loops`). The entry is never deleted: it is kept in the ledger with status closed, its state line carrying the outcome, and the outcome appended to its note.",
     { id: z.string(), outcome: z.string().optional() },
     async (args) => {
       let result: Result | undefined;
@@ -755,7 +767,7 @@ export function buildObsidianTools(app: App, opts?: ObsidianToolOpts): AnyTool[]
             return cur;
           }
           result = ok(`Closed ${args.id}.`);
-          return `${closed.map(formatLoop).join("\n\n")}\n`;
+          return writeLoops(cur, closed);
         });
       });
       return result ?? err("Failed to close loop.");
@@ -773,10 +785,10 @@ export function buildObsidianTools(app: App, opts?: ObsidianToolOpts): AnyTool[]
       const others = activeLoops(entries).filter((e) => !dueIds.has(e.id));
       if (due.length === 0 && others.length === 0) return ok("No open loops.");
       const line = (e: LoopEntry, label: string) =>
-        `- [${label}] ${e.id} — ${e.title}${e.resurface ? ` (resurface: ${e.resurface})` : ""}`;
+        `- [${label}] ${e.id}: ${e.title}${e.resurface ? ` (resurface: ${e.resurface})` : ""}${e.state ? ` - ${e.state}` : ""}`;
       const body = [
         ...due.map((e) => line(e, "due")),
-        ...others.map((e) => line(e, "open")),
+        ...others.map((e) => line(e, e.status)),
       ].join("\n");
       return ok(body);
     }
@@ -799,7 +811,7 @@ export function buildObsidianTools(app: App, opts?: ObsidianToolOpts): AnyTool[]
       if (!exo) return ok("Exo plugin not reachable.");
       if (!(await exo.agentsReady())) return ok("Named agents are disabled in Exo settings.");
       const agents = exo.agentStore.list();
-      if (!agents.length) return ok("No agents found. Canonical vault agents live in `_system/agents/<slug>/` bundles.");
+      if (!agents.length) return ok("No agents found. Canonical vault agents live in `<system folder>/agents/<slug>/` bundles.");
       const autos = exo.automationStore.list();
       const lines = agents.map(({ brain }) => {
         const auto = autos.find((a) => a.agent === brain.slug);

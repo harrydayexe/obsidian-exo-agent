@@ -5,10 +5,12 @@ import {
   appendUnderHeading,
   journalAlreadyHas,
   journalContract,
-  JOURNAL_HEADING,
   JOURNAL_MARKER,
   JOURNAL_MAX,
 } from "../src/core/agent-journal";
+import { DEFAULT_DAILY_HEADING } from "../src/core/brain-config";
+
+const JOURNAL_HEADING = DEFAULT_DAILY_HEADING;
 
 describe("extractJournalLine", () => {
   it("takes the marked line", () => {
@@ -56,7 +58,7 @@ describe("extractJournalLine", () => {
 describe("journalLine", () => {
   it("renders time, agent and summary", () => {
     const at = new Date(2026, 7, 2, 14, 32).getTime();
-    expect(journalLine("Inbox Triager", at, "filed 2 notes")).toBe("- 14:32 **Inbox Triager** — filed 2 notes");
+    expect(journalLine("Inbox Triager", at, "filed 2 notes")).toBe("- 14:32 **Inbox Triager** filed 2 notes");
   });
 
   it("zero-pads the clock", () => {
@@ -66,7 +68,7 @@ describe("journalLine", () => {
 });
 
 describe("appendUnderHeading", () => {
-  const line = "- 09:00 **A** — did a thing";
+  const line = "- 09:00 **A** did a thing";
 
   it("creates the section at the end when absent", () => {
     const out = appendUnderHeading("# Daily\n\nSome notes.", JOURNAL_HEADING, line);
@@ -76,28 +78,28 @@ describe("appendUnderHeading", () => {
   });
 
   it("appends inside an existing section, in order", () => {
-    const before = `# Daily\n\n${JOURNAL_HEADING}\n\n- 08:00 **A** — first\n`;
+    const before = `# Daily\n\n${JOURNAL_HEADING}\n\n- 08:00 **A** first\n`;
     const out = appendUnderHeading(before, JOURNAL_HEADING, line);
     expect(out.indexOf("first")).toBeLessThan(out.indexOf("did a thing"));
   });
 
-  it("stays inside its section — a following heading is untouched", () => {
-    const before = [`${JOURNAL_HEADING}`, "", "- 08:00 **A** — first", "", "## Altro", "", "roba mia"].join("\n");
+  it("stays inside its section a following heading is untouched", () => {
+    const before = [`${JOURNAL_HEADING}`, "", "- 08:00 **A** first", "", "## Altro", "", "roba mia"].join("\n");
     const out = appendUnderHeading(before, JOURNAL_HEADING, line);
     expect(out.indexOf("did a thing")).toBeLessThan(out.indexOf("## Altro"));
     expect(out).toContain("roba mia");
   });
 
   it("does not disturb a higher-level heading that follows", () => {
-    const before = [`${JOURNAL_HEADING}`, "", "- 08:00 **A** — first", "# Top", "mio"].join("\n");
+    const before = [`${JOURNAL_HEADING}`, "", "- 08:00 **A** first", "# Top", "mio"].join("\n");
     const out = appendUnderHeading(before, JOURNAL_HEADING, line);
     expect(out.indexOf("did a thing")).toBeLessThan(out.indexOf("# Top"));
   });
 
   it("finds the section after the user changed its heading level", () => {
-    const before = ["## 🤖 Agents", "", "- 08:00 **A** — first", "", "## Meetings", "- call"].join("\n");
+    const before = ["## Agents", "", "- 08:00 **A** first", "", "## Meetings", "- call"].join("\n");
     const out = appendUnderHeading(before, JOURNAL_HEADING, line);
-    expect(out.match(/🤖 Agents/g)).toHaveLength(1);
+    expect(out.match(/Agents/g)).toHaveLength(1);
     expect(out.indexOf("did a thing")).toBeLessThan(out.indexOf("## Meetings"));
   });
 
@@ -108,7 +110,7 @@ describe("appendUnderHeading", () => {
   it("is idempotent-checkable via journalAlreadyHas", () => {
     const out = appendUnderHeading("", JOURNAL_HEADING, line);
     expect(journalAlreadyHas(out, line)).toBe(true);
-    expect(journalAlreadyHas(out, "- 10:00 **B** — other")).toBe(false);
+    expect(journalAlreadyHas(out, "- 10:00 **B** other")).toBe(false);
   });
 });
 

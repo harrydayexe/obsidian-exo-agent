@@ -1,7 +1,7 @@
 /**
  * Automation model — the unified, file-based automation (pure, no Obsidian).
  *
- * One automation = one `_system/automations/<slug>.md` file: readable
+ * One automation = one `<system>/automations/<slug>.md` file: readable
  * frontmatter (name, description, when, mode, scope, agent, cooldown,
  * enabled) plus the prompt as the markdown body. This module owns the type,
  * the human-readable `when` grammar, and the frontmatter round-trip; the

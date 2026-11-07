@@ -2,7 +2,7 @@
  * Automations tab — the single surface for everything that runs unattended.
  *
  * v2: one unified model. Each automation is a readable file
- * (`<memoryRoot>/automations/<slug>.md`); this tab renders one card per file —
+ * (`<system>/automations/<slug>.md`); this tab renders one card per file:
  * icon, name, description and a SENTENCE ("Runs daily at 07:00 · read-only ·
  * last run 16h ago") — with Run now and an enabled toggle. Clicking a card
  * opens the in-hub editor (automation-editor.ts); clicking the last-run line

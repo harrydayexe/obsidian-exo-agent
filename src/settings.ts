@@ -3,7 +3,6 @@ import type ExoPlugin from "./main";
 import type { PermissionMode, ProviderId } from "./providers/types";
 import { ADAPTERS } from "./providers/registry";
 import { providerModels, BACKGROUND_MODEL_OPTIONS } from "./core/model-options";
-import { DEFAULT_MEMORY_ROOT, LEGACY_MEMORY_ROOT } from "./core/paths";
 import { renderCliDiagnostics } from "./ui/settings-cli";
 import { renderComposerModels } from "./ui/settings-composer-models";
 
@@ -496,7 +495,7 @@ export class MVASettingTab extends PluginSettingTab {
     this.toggleSetting(
       el,
       "Automatic memory",
-      `After a chat goes idle (or you switch away), Exo reads it and adds or updates one-line facts in your existing notes, following the memory rules in AGENTS.md when your vault has them; anything without an obvious home lands in ${paths.inbox}/. Before each message it recalls related notes and past chats. Every harvest is one git commit (or a snapshot without git) you can undo with "Undo last memory write". Uses the background AI budget below.`,
+      `After a chat goes idle (or you switch away), Exo reads it and adds or updates one-line facts in your existing notes, following the memory rules in AGENTS.md when your vault has them; anything without an obvious home waits in ${paths.inbox}/ for the nightly dream to place. Before each message it recalls related notes and past chats. Every harvest is one git commit (or a snapshot without git) you can undo with "Undo last memory write". Uses the background AI budget below.`,
       "autoMemory"
     );
     this.toggleSetting(
@@ -640,24 +639,6 @@ export class MVASettingTab extends PluginSettingTab {
       );
 
     new Setting(el)
-      .setName("Memory folder")
-      .setDesc(
-        "Where Exo stores its memory (vault-relative). Auto-detected on first launch: " +
-          `a vault with ${LEGACY_MEMORY_ROOT}/ keeps it, a fresh one uses ${DEFAULT_MEMORY_ROOT}/. Change it to point Exo ` +
-          "at a different folder — existing files are NOT moved; clear the field to " +
-          "return to auto-detection on the next launch."
-      )
-      .addText((t) =>
-        t
-          .setPlaceholder(DEFAULT_MEMORY_ROOT)
-          .setValue(s.memoryRoot)
-          .onChange(async (v) => {
-            s.memoryRoot = v.trim();
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(el)
       .setName("Queue folder")
       .setDesc("Vault-relative path for request notes.")
       .addText((t) =>
@@ -715,7 +696,7 @@ export class MVASettingTab extends PluginSettingTab {
     this.toggleSetting(
       el,
       "Enable named agents",
-      "Turns on the agent registry: `@agent` in the composer binds a turn to a specific agent, `/as <agent>` binds the whole conversation, and agents with a schedule trigger can run unattended. Vault agents come from human-readable `_system/agents/<slug>/` bundles; CLI files are runtime adapters. Each agent remains separately disabled until you turn it on.",
+      "Turns on the agent registry: `@agent` in the composer binds a turn to a specific agent, `/as <agent>` binds the whole conversation, and agents with a schedule trigger can run unattended. Vault agents come from human-readable `<system folder>/agents/<slug>/` bundles; CLI files are runtime adapters. Each agent remains separately disabled until you turn it on.",
       "agentsEnabled",
       // Warm the registry the moment the flag flips. Without this the store
       // stays unloaded until some other consumer happens to ask for it, so
