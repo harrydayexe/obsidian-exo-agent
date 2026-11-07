@@ -40,3 +40,9 @@ export function safeTitle(title: string): string {
 export function oneLine(text: string): string {
   return text.replace(/\s+/g, " ").trim().replace(/^[-*+]\s+/, "");
 }
+
+/** Text that can sit inside a fact tail (`[source: ..; was: ..]`): `;` separates
+ *  the tail's keys and `]` ends it, so neither survives. */
+export function factSafe(text: string): string {
+  return oneLine(text).replace(/\s*;\s*/g, ", ").replace(/\[/g, "(").replace(/\]/g, ")");
+}

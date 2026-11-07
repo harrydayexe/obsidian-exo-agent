@@ -48,14 +48,14 @@ const MIN_LINE_KEYWORDS = 4;
 
 /**
  * A canonical line as a question: list marker, wikilinks (the answer's own
- * name), `[fonte ...]` and `(dal ...; prima ...)` tails removed. Null when
+ * name), `[source: ...]` fact tails and legacy `(dal ...; prima ...)` tails removed. Null when
  * fewer than {@link MIN_LINE_KEYWORDS} keywords remain.
  */
 export function questionFromLine(line: string): string | null {
   const text = withoutListMarker(line)
     .replace(/^(?:>\s*|#{1,6}\s+)+/, "")
     .replace(/!?\[\[[^\]]*\]\]/g, " ")
-    .replace(/\[fonte[^\]]*\]/gi, " ")
+    .replace(/\[(?:source|fonte)[^\]]*\]/gi, " ")
     .replace(/\((?:dal|prima)\b[^)]*\)/gi, " ")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\s\^[\w-]+$/, "")

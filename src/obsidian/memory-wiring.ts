@@ -4,6 +4,7 @@ import { memoryCaps, type MemoryCaps } from "../core/memory-caps";
 import { latestHarvestSha, reverseWrites, revertHarvestCommit, type UndoResult } from "../core/memory-undo";
 import { MemoryHarvester } from "./memory-harvest";
 import { HarvestLog } from "./harvest-log";
+import { loadBrainConfig } from "./brain-config";
 import { checkGitRepo, gitRunner, type GitRun } from "./git";
 import { vaultBasePath } from "./tool-kit";
 import { harvestSource } from "../ui/convo-bridge";
@@ -46,6 +47,7 @@ export function createMemoryHarvester(plugin: ExoPlugin, log: HarvestLog): Memor
     app: plugin.app,
     caps: () => pluginMemoryCaps(plugin),
     paths: () => plugin.paths,
+    brain: () => loadBrainConfig(plugin.app),
     source: () => harvestSource(plugin.app),
     utility: async (prompt, signal) => {
       let tokens: number | null = null;

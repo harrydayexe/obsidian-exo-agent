@@ -7,6 +7,7 @@
 import * as z from "zod";
 import { TFile, type App } from "obsidian";
 import { claudeSdk } from "../providers/sdk-loader";
+import { chatLink } from "../core/chat-link";
 import { quotedLine } from "../core/correction";
 import { frontmatterKeyLines } from "../core/frontmatter-patch";
 import { correctionCandidate, type ProposalCandidate } from "../core/proposals";
@@ -67,7 +68,7 @@ export function buildCorrectionTool(app: App, convoId: string) {
     "propose_correction",
     "Replace an outdated line in a note with the current fact. It is written at once, with a receipt Mario can undo. " +
       "Quote `old_line` exactly as it is in the note (the list marker may be left out); `new_text` is the current fact only. " +
-      "The written line keeps the old one in the vault's format: `<new> (dal YYYY-MM-DD; prima <old>)`.",
+      "The written line keeps the old one in the vault's fact format: `<new> [source: ...; since: YYYY-MM-DD; was: <old>]`.",
     { path: z.string().describe("Vault path or note name"), old_line: z.string(), new_text: z.string() },
     async (args) => {
       const file = resolveLink(app, args.path);
@@ -83,7 +84,7 @@ export function buildCorrectionTool(app: App, convoId: string) {
           : `That line appears more than once in ${name}. Quote a longer, unique line.`);
       }
       if (!args.new_text.trim()) return err("new_text is empty.");
-      const change = { type: "line" as const, oldLine: line, newLine: formatSupersede(line, args.new_text, today()) };
+      const change = { type: "line" as const, oldLine: line, newLine: formatSupersede(line, args.new_text, today(), `chat (${chatLink(convoId, 0)})`) };
       const [status] = (await propose(app, [correctionCandidate(file.path, change, "Flagged as outdated in chat.")], convoId, `tool-${Date.now()}`)) ?? [];
       if (status === "applied") return ok(`Corrected ${name}. Mario can undo it with "Undo a save to note".`);
       if (status === "duplicate") return ok(`The same correction for ${name} was already made or turned down.`);

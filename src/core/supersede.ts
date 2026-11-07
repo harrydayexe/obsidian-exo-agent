@@ -5,8 +5,10 @@
  * current note; the inconsistent markers it finds become correction proposals.
  * No Obsidian import: links arrive already resolved to paths.
  */
+import { formatFact, parseFact } from "../vendor/cyber-brain/core.mjs";
 import { frontmatterKeyLines } from "./frontmatter-patch";
 import { PROPOSAL_LIMITS } from "./proposals";
+import { factSafe } from "./text-safety";
 
 /** One note's markers. Links resolved to vault paths; unresolved kept as raw text. */
 export interface NoteMarkers {
@@ -186,11 +188,30 @@ const MARKER = /^(\s*(?:[-*+]|\d+[.)])\s+(?:\[.\]\s+)?)/;
 /** A line's text without indent and list marker (`- `, `1. `, `- [ ] `). */
 export const withoutListMarker = (line: string): string => line.trim().replace(MARKER, "").trim();
 
-/** The vault's changed-fact line: `<new> (dal <date>; prima <old>)`, keeping
- *  the old line's indent and list marker. */
-export function formatSupersede(oldLine: string, newText: string, date: string): string {
-  const prefix = MARKER.exec(oldLine)?.[1] ?? "";
-  const old = oldLine.slice(prefix.length).trim();
+/** A trailing Obsidian block anchor, ` ^exo-abc123`. */
+const ANCHOR_TAIL = /\s\^[\w-]+\s*$/;
+
+/** The changed-fact line of spec 4.1: `<new> [source: ..; since: <date>; was: <old>]`,
+ *  keeping the old line's indent, list marker and block anchor. `was` is the
+ *  old fact's text (its own tail dropped when it was a fact line). A line
+ *  without a list marker stays without one. */
+export function formatSupersede(oldLine: string, newText: string, date: string, source: string): string {
+  const { prefix, anchor, fact } = splitLine(oldLine);
   const next = newText.trim().replace(MARKER, "");
-  return `${prefix}${next} (dal ${date}; prima ${old})`;
+  const line = formatFact(next, { source: factSafe(source), since: date, was: factSafe(fact) });
+  return `${prefix || (oldLine.match(/^\s*/) ?? [""])[0]}${line.slice(2)}${anchor ? ` ${anchor}` : ""}`;
 }
+
+/** A line as `[list marker, block anchor, fact text]`: the text without marker,
+ *  anchor or (for a fact line) its `[source: ...]` tail. */
+function splitLine(line: string): { prefix: string; anchor: string; fact: string } {
+  const prefix = MARKER.exec(line)?.[1] ?? "";
+  const anchor = ANCHOR_TAIL.exec(line)?.[0].trim() ?? "";
+  const bare = (anchor ? line.slice(0, line.length - anchor.length) : line).slice(prefix.length).trim();
+  const parsed = parseFact(`- ${bare}`);
+  return { prefix, anchor, fact: parsed && !parsed.error ? parsed.text : bare };
+}
+
+/** The fact a line states: no list marker, block anchor or fact tail. This is
+ *  the `was:` of a transit entry that replaces the line. */
+export const factTextOf = (line: string): string => splitLine(line).fact;

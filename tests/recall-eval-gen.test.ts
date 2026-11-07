@@ -42,6 +42,11 @@ describe("questionFromLine", () => {
     expect(q).toBe("Decidere il formato della memoria automatica");
   });
 
+  it("strips the kit's [source: ...; since: ...; was: ...] fact tail", () => {
+    const q = questionFromLine('- Decidere il formato della memoria automatica [[2026-09-25-memoria]] [source: chat "X" (obsidian://exo-chat?id=1); since: 2026-10-01; was: il file unico]');
+    expect(q).toBe("Decidere il formato della memoria automatica");
+  });
+
   it("keeps the label of an aliased wikilink out of the question", () => {
     expect(questionFromLine("- Scelta del task manager [[2026-10-20-todoist|Todoist]] per tutto il lavoro quotidiano")).toBe("Scelta del task manager per tutto il lavoro quotidiano");
   });

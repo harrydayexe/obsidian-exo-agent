@@ -11,7 +11,7 @@ import {
 import { chatLink } from "../src/core/chat-link";
 
 const P: Provenance = { convoId: "c1", msgIndex: 4, chatTitle: "Pricing chat", date: "2026-10-24" };
-const PROV = `[fonte: chat "Pricing chat" (${chatLink("c1", 4)}); dal: 2026-10-24]`;
+const PROV = `[source: chat "Pricing chat" (${chatLink("c1", 4)}); since: 2026-10-24]`;
 
 function plan(r: PatchPlan | { error: string }): PatchPlan {
   if ("error" in r) throw new Error(r.error);
@@ -32,13 +32,13 @@ describe("newAnchor", () => {
 });
 
 describe("formatProvenance", () => {
-  it("carries the chat link and the date in the vault's fonte/dal format", () => {
+  it("carries the chat link and the date in the kit's source/since format", () => {
     expect(formatProvenance(P)).toBe(PROV);
   });
 
   it("with no chat (a headless run) it names the automation and carries no link", () => {
     expect(formatProvenance({ ...P, convoId: "", msgIndex: 0, chatTitle: "Weekly digest" })).toBe(
-      '[fonte: automazione "Weekly digest"; dal: 2026-10-24]',
+      '[source: automation "Weekly digest"; since: 2026-10-24]',
     );
   });
 

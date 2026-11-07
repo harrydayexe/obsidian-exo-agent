@@ -82,7 +82,7 @@ describe("saveToNote", () => {
     const log = memLog();
     const r = receipt(await saveToNote(app, log, { target: { path: "N.md", section: DEC }, text: "two", provenance: P }));
     expect(notes.get("N.md")).toBe(`## Decisions\n- one\n${r.lines[0]}\n\n## Notes\n`);
-    expect(r.lines[0]).toMatch(/^- two \[fonte: chat "Pricing" \(obsidian:\/\/exo-chat\?id=c1&msg=3\); dal: 2026-10-24\] \^exo-[0-9a-z]{6}$/);
+    expect(r.lines[0]).toMatch(/^- two \[source: chat "Pricing" \(obsidian:\/\/exo-chat\?id=c1&msg=3\); since: 2026-10-24\] \^exo-[0-9a-z]{6}$/);
     expect((await log.undoable())[0]?.id).toBe(r.id);
   });
 
@@ -246,14 +246,14 @@ describe("save_to_note tool", () => {
     expect(res.isError).toBe(false);
     expect(saved.map((r) => r.path)).toEqual(["N.md"]);
     expect(res.text).toMatch(/^Saved to N > ## Decisions \(\^exo-[0-9a-z]{6}\)\.$/);
-    expect(notes.get("N.md")).toContain('[fonte: chat "Pricing" (obsidian://exo-chat?id=c1&msg=3); dal: ');
+    expect(notes.get("N.md")).toContain('[source: chat "Pricing" (obsidian://exo-chat?id=c1&msg=3); since: ');
   });
 
   it("a headless save names the automation, never an empty chat link, and keeps its receipt", async () => {
     const { notes, run, log } = withHost({ "N.md": "## Decisions\n- one\n" });
     const res = await run({ path: "N.md", section: "Decisions", text: "two" }, { runName: "Weekly digest" });
     expect(res.isError).toBe(false);
-    expect(notes.get("N.md")).toMatch(/^- two \[fonte: automazione "Weekly digest"; dal: \d{4}-\d{2}-\d{2}\] \^exo-[0-9a-z]{6}$/m);
+    expect(notes.get("N.md")).toMatch(/^- two \[source: automation "Weekly digest"; since: \d{4}-\d{2}-\d{2}\] \^exo-[0-9a-z]{6}$/m);
     expect(notes.get("N.md")).not.toContain("exo-chat");
     expect((await log.list()).map((r) => r.path)).toEqual(["N.md"]);
   });
@@ -346,7 +346,7 @@ describe("noteCorrections (corrections written on proposal)", () => {
     const { app, notes } = vault({ "N.md": "- Pro is 29 euro\n", "Two.md": "- x\n- x\n" });
     const log = memLog();
     const target = noteCorrections(app, () => log, () => {});
-    const newLine = "- Pro is 39 euro (dal 2026-10-24; prima Pro is 29 euro)";
+    const newLine = "- Pro is 39 euro [source: chat; since: 2026-10-24; was: Pro is 29 euro]";
     await target.apply({ ...input, path: "N.md", change: { type: "line", oldLine: "- Pro is 29 euro", newLine } });
     expect(notes.get("N.md")).toBe(`${newLine}\n`);
     await expect(target.apply({ ...input, path: "N.md", change: { type: "line", oldLine: "- Pro is 29 euro", newLine } }))
@@ -403,7 +403,7 @@ describe("propose_correction tool", () => {
     expect(appended[0].candidate.payload).toMatchObject({
       kind: "correction",
       path: "Pricing.md",
-      change: { type: "line", oldLine: "- Pro is 29 euro", newLine: expect.stringMatching(/^- Pro is 39 euro \(dal \d{4}-\d{2}-\d{2}; prima Pro is 29 euro\)$/) },
+      change: { type: "line", oldLine: "- Pro is 29 euro", newLine: expect.stringMatching(/^- Pro is 39 euro \[source: chat \(obsidian:\/\/exo-chat\?id=c1&msg=0\); since: \d{4}-\d{2}-\d{2}; was: Pro is 29 euro\]$/) },
     });
     expect(refreshed()).toBe(0);
     expect((await run({ path: "Pricing.md", old_line: "Pro is 29 euro", new_text: "Pro is 39 euro" })).isError).toBe(false);

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { applySupersede, buildSupersedeIndex, formatSupersede, markerKeys, markersOf, type MarkerFix, type NoteMarkers } from "../src/core/supersede";
+import { parseFact } from "../src/vendor/cyber-brain/core.mjs";
+import { applySupersede, buildSupersedeIndex, factTextOf, formatSupersede, markerKeys, markersOf, type MarkerFix, type NoteMarkers } from "../src/core/supersede";
 import { correctionCandidate, parseProposalCandidates, PROPOSAL_LIMITS } from "../src/core/proposals";
 
 const D = "_system/memory/decisions";
@@ -218,17 +219,40 @@ describe("applySupersede", () => {
 });
 
 describe("formatSupersede", () => {
-  it("writes the vault's changed-fact format", () => {
-    expect(formatSupersede("Pro tier is 29 euro", "Pro tier is 39 euro", "2026-10-24")).toBe(
-      "Pro tier is 39 euro (dal 2026-10-24; prima Pro tier is 29 euro)",
+  const SRC = "chat X";
+
+  it("writes the changed-fact format of the kit: new value, source, since, was", () => {
+    expect(formatSupersede("Pro tier is 29 euro", "Pro tier is 39 euro", "2026-10-24", SRC)).toBe(
+      "Pro tier is 39 euro [source: chat X; since: 2026-10-24; was: Pro tier is 29 euro]",
     );
   });
 
   it("keeps the old line's list marker and indent, once", () => {
-    expect(formatSupersede("  - Pro tier is 29 euro", "- Pro tier is 39 euro", "2026-10-24")).toBe(
-      "  - Pro tier is 39 euro (dal 2026-10-24; prima Pro tier is 29 euro)",
+    expect(formatSupersede("  - Pro tier is 29 euro", "- Pro tier is 39 euro", "2026-10-24", SRC)).toBe(
+      "  - Pro tier is 39 euro [source: chat X; since: 2026-10-24; was: Pro tier is 29 euro]",
     );
-    expect(formatSupersede("- [ ] ship at 29", "ship at 39", "2026-10-24")).toBe("- [ ] ship at 39 (dal 2026-10-24; prima ship at 29)");
+    expect(formatSupersede("- [ ] ship at 29", "ship at 39", "2026-10-24", SRC)).toBe(
+      "- [ ] ship at 39 [source: chat X; since: 2026-10-24; was: ship at 29]",
+    );
+  });
+
+  it("keeps the block anchor last and takes the old fact's own tail off the was", () => {
+    expect(formatSupersede("- Team: 4 [source: nota; since: 2026-01-01] ^exo-abc123", "Team: 6", "2026-10-24", SRC)).toBe(
+      "- Team: 6 [source: chat X; since: 2026-10-24; was: Team: 4] ^exo-abc123",
+    );
+  });
+
+  it("keeps the tail parseable when the old line carries brackets or semicolons", () => {
+    const line = formatSupersede("- Dati in [[CRM]]; vecchio [fonte: x]", "Dati in [[HubSpot]]", "2026-10-24", "chat; [x]");
+    const fact = parseFact(line);
+    expect(fact?.error).toBeNull();
+    expect(fact?.meta.since).toBe("2026-10-24");
+    expect(fact?.text).toBe("Dati in [[HubSpot]]");
+  });
+
+  it("exposes the fact a line states as the was of a transit entry", () => {
+    expect(factTextOf("  - Team: 4 [source: nota; since: 2026-01-01] ^exo-abc123")).toBe("Team: 4");
+    expect(factTextOf("- [ ] plain line")).toBe("plain line");
   });
 });
 

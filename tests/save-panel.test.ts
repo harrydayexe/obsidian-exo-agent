@@ -59,7 +59,7 @@ describe("save panel", () => {
     expect(host.find("mva-gallery-chip").find((c) => c.hasClass("is-active"))?.textContent).toBe("Pricing");
     expect(host.find("mva-sel-chip")[0].textContent).toBe("End of note");
     expect(diffText(host)).toContain("two");
-    expect(diffText(host)).toContain('[fonte: chat "Pricing"');
+    expect(diffText(host)).toContain('[source: chat "Pricing"');
     expect(saveBtn(host).hasClass("is-disabled")).toBe(false);
     expect(saveBtn(host).getAttribute("aria-disabled")).toBe("false");
   });
@@ -92,7 +92,7 @@ describe("save panel", () => {
     expect(host.find("mva-sel-chip")[0].textContent).toBe("## Decisions");
     const d = diffText(host);
     expect(d).toContain("- one");
-    expect(d).toMatch(/- two \[fonte: chat "Pricing"/);
+    expect(d).toMatch(/- two \[source: chat "Pricing"/);
   });
 
   it("New section... asks for a name and previews the heading", async () => {

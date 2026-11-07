@@ -28,7 +28,7 @@ export function buildSaveTool(app: App, convoId: string | undefined, onSaved?: (
     "save_to_note",
     "Save a result into a note, in the right section, with a provenance line back to this chat and an undo receipt. " +
       "Save the distilled point, not the whole answer. A one-line text saved into a section that is a list becomes one vault fact line " +
-      "(`- <text> [fonte: chat ...; dal: YYYY-MM-DD]`), so give the bare fact; longer text is saved verbatim with the provenance line under it. " +
+      "(`- <text> [source: chat ...; since: YYYY-MM-DD]`), so give the bare fact; longer text is saved verbatim with the provenance line under it. " +
       "`section` is an existing heading's text (no #); `new_section` adds a heading at the end; neither means end of note. Creates the note if missing.",
     {
       path: z.string().describe("Vault path or note name"),

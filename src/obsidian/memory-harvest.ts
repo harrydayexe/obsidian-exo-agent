@@ -1,5 +1,6 @@
 import { TFile, type App } from "obsidian";
 import type { ExoPaths } from "../core/paths";
+import type { BrainConfig } from "../core/brain-config";
 import type { MemoryCaps } from "../core/memory-caps";
 import type { ChatMessage } from "../core/recent-chats";
 import { localDate } from "../core/recent-chats";
@@ -53,6 +54,8 @@ export interface HarvesterDeps {
   app: App;
   caps(): MemoryCaps;
   paths(): ExoPaths;
+  /** The vault's AGENTS.md configuration: `writers` decides transit versus direct writes. */
+  brain(): Promise<BrainConfig>;
   source(): HarvestSource | null;
   /** A tool-less background model call; "" on failure. */
   utility(prompt: string, signal: AbortSignal): Promise<{ text: string; tokens: number | null }>;
@@ -176,6 +179,7 @@ export class MemoryHarvester {
       items.push({ candidate, notes: await this.candidateNotes(keywords, routingNotes, env) });
     }
     const paths = this.d.paths();
+    const brain = await this.d.brain();
     const decided = await this.call(
       buildDecidePrompt({
         today,
@@ -232,6 +236,8 @@ export class MemoryHarvester {
           now,
           offered,
           ledgerPath: paths.openLoops,
+          writers: brain.writers,
+          immediate: [paths.observations, `${paths.agentMemory}/`],
           provenance: { convoId: chat.id, chatTitle: safeTitle(chat.title), date: today },
         }),
       );
@@ -347,6 +353,10 @@ export class MemoryHarvester {
     const vault = this.d.app.vault;
     return {
       exists: (path) => vault.getAbstractFileByPath(path) instanceof TFile,
+      read: async (path) => {
+        const f = vault.getAbstractFileByPath(path);
+        return f instanceof TFile ? vault.read(f) : null;
+      },
       edit: async (path, fn) => {
         const f = vault.getAbstractFileByPath(path);
         if (!(f instanceof TFile)) return false;
