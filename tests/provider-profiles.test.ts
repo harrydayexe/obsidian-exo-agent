@@ -38,6 +38,12 @@ describe("provider profiles", () => {
     expect(isProviderId(undefined)).toBe(false);
   });
 
+  it("offers Claude's auto mode only where it exists", () => {
+    expect(PROFILES.claude.permModes).toContain("auto");
+    expect(PROFILES.opencode.permModes).not.toContain("auto");
+    expect(PROFILES.opencode.permModes).toEqual(["default", "acceptEdits", "plan", "bypassPermissions"]);
+  });
+
   it("keeps Codex's sandbox settings in its own respawn signature only", () => {
     const s = { ...DEFAULT_SETTINGS };
     expect(PROFILES.claude.signatureExtras(s)).toEqual([]);

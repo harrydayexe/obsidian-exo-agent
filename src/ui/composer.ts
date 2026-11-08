@@ -971,7 +971,11 @@ export class Composer {
         const sandbox = this.sandboxChip();
         const options = sandbox
           ? Composer.CODEX_SANDBOX_OPTS.map(([v, l]) => ({ value: v, label: l, risk: Composer.codexSandboxRisk(v) }))
-          : Composer.PERM_OPTS.map(([v, l]) => ({ value: v, label: l, risk: Composer.permRisk(v) }));
+          : Composer.PERM_OPTS.filter(([v]) => (PROFILES[this.host.provider].permModes as readonly string[]).includes(v)).map(([v, l]) => ({
+              value: v,
+              label: l,
+              risk: Composer.permRisk(v),
+            }));
         const current = sandbox ? s.codexSandbox : s.permissionMode;
         this.renderOptionRows(pop, options, current, {
           onPick: (v) => {

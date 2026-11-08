@@ -9,7 +9,7 @@
  * branch. A `Record<ProviderId, ProviderProfile>` makes a new provider a
  * compile error until every choice below is made for it.
  */
-import type { ProviderId } from "./types";
+import type { PermissionMode, ProviderId } from "./types";
 import type { MVASettings } from "../settings-schema";
 
 /** Settings keys holding a plain string (not a literal union, so a write of
@@ -38,6 +38,9 @@ export interface ProviderProfile {
   expandVaultCommands: boolean;
   /** The composer permission chip: Claude-style modes, or Codex's sandbox. */
   permissionChip: "modes" | "codex-sandbox";
+  /** The modes the chip offers when it shows modes. `auto` is Claude Code's
+   *  classifier mode; a provider without it doesn't offer it. */
+  permModes: readonly PermissionMode[];
   /** A live plan-mode switch only applies from the next turn. */
   planFromNextTurn: boolean;
   /** The native compact operation accepts free-text instructions. */
@@ -73,6 +76,7 @@ export const PROFILES: Record<ProviderId, ProviderProfile> = {
     agentBinding: "subagent",
     expandVaultCommands: false,
     permissionChip: "modes",
+    permModes: ["default", "acceptEdits", "plan", "auto", "bypassPermissions"],
     planFromNextTurn: false,
     compactTakesInstructions: true,
     resumeProbe: "claude-jsonl",
@@ -97,6 +101,7 @@ export const PROFILES: Record<ProviderId, ProviderProfile> = {
     agentBinding: "system-prompt",
     expandVaultCommands: true,
     permissionChip: "codex-sandbox",
+    permModes: [], // the chip shows the sandbox instead
     planFromNextTurn: true,
     compactTakesInstructions: false,
     resumeProbe: "trust",
@@ -119,6 +124,8 @@ export const PROFILES: Record<ProviderId, ProviderProfile> = {
     agentBinding: "system-prompt",
     expandVaultCommands: true,
     permissionChip: "modes",
+    // No `auto`: opencode has no classifier mode, so it would only mean "ask".
+    permModes: ["default", "acceptEdits", "plan", "bypassPermissions"],
     planFromNextTurn: false,
     compactTakesInstructions: true,
     resumeProbe: "trust",
