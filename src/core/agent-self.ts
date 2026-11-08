@@ -1,12 +1,14 @@
 /**
  * The Agent Is the Folder — pure identity core (NO `obsidian` imports).
  *
- * The agent folder (`paths.agentDir`) is the vault's tool-agnostic identity layer: a manifest plus
- * three char-limited Markdown blocks (`SOUL.md`, `USER.md`, `NOW.md`). Exo is
- * the single owner — it hydrates them at boot and maintains them through the
- * governed `rethink_memory` tool; external tools (Claude
- * Code, Codex, Cowork) read them at boot but never write. Single-writer,
- * many-readers (design `2026-07-10-agent-folder-design`).
+ * The agent folder (`paths.agentDir`, the spec's `identity/`) is the vault's tool-agnostic identity layer: a manifest plus
+ * three char-limited Markdown blocks (`SOUL.md`, `USER.md`, `NOW.md`). Exo
+ * hydrates them at boot and maintains them through the governed
+ * `rethink_memory` tool. It is not the only writer: cyber-brain lets any agent
+ * rewrite SOUL (with the reason in the run record) and NOW (directly when
+ * `writers: direct`, through `dream` when `writers: inbox`), and `weekly`
+ * rebuild USER from `observations.md` (SPEC 4.6). Exo's rationale rule for SOUL
+ * and USER is its own guard; it does not lock other agents out.
  *
  * This module owns everything about identity that can be reasoned about without
  * Obsidian, so it is fully unit-testable:
@@ -25,7 +27,7 @@
  * `src/obsidian/memory.ts` / `src/obsidian/tools.ts` / `src/view.ts`.
  */
 
-import { exoPaths, LEGACY_MEMORY_ROOT } from "./paths";
+import { exoPaths, DEFAULT_MEMORY_ROOT } from "./paths";
 
 /** The three identity blocks, in the fixed compile order SOUL → USER → NOW. */
 export type BlockName = "SOUL" | "USER" | "NOW";
@@ -56,7 +58,7 @@ export const AGENT_BLOCK_NAMES: readonly BlockName[] = AGENT_BLOCKS.map((b) => b
 
 /** Legacy default identity-layer folder — tests/fallback only;
  *  live callers derive the folder from the configured `paths.agentDir`. */
-export const AGENT_DIR = exoPaths(LEGACY_MEMORY_ROOT).agentDir;
+export const AGENT_DIR = exoPaths(DEFAULT_MEMORY_ROOT).agentDir;
 
 /** Current on-disk format version the manifest documents. */
 export const AGENT_FORMAT_VERSION = 2;
@@ -183,11 +185,9 @@ const SEED_CLOSE = (name: BlockName): string => `<<<end-${name}>>>`;
 
 /** The raw source material the seeder distills the three blocks FROM. */
 export interface SeedSources {
-  /** The mental-model note (`paths.mentalModel`). */
-  mentalModel: string;
-  /** The preferences note (`paths.preferences`). */
-  preferences: string;
-  /** The vault-context note (`paths.vaultContext`). */
+  /** The observations note (`paths.observations`). */
+  observations: string;
+  /** The vault entry point (`paths.vaultContext`, AGENTS.md). */
   vaultContext: string;
 }
 
@@ -218,13 +218,10 @@ export function buildSeedPrompt(sources: SeedSources): string {
     `${SEED_OPEN("NOW")}\n…NOW markdown…\n${SEED_CLOSE("NOW")}`,
     "No prose outside the fences. Keep each block within its char limit.",
     "",
-    "=== SOURCE: mental model of the user ===",
-    cap(sources.mentalModel, 6000),
+    "=== SOURCE: observations about the user ===",
+    cap(sources.observations, 6000),
     "",
-    "=== SOURCE: preferences ===",
-    cap(sources.preferences, 6000),
-    "",
-    "=== SOURCE: vault context ===",
+    "=== SOURCE: vault entry point (AGENTS.md) ===",
     cap(sources.vaultContext, 6000),
   ].join("\n");
 }
@@ -282,10 +279,12 @@ export function manifestContent(): string {
     "",
     "## Contract",
     "",
-    "- **Exo owns maintenance.** It hydrates these blocks at boot and updates them",
-    "  through the governed `rethink_memory` tool.",
-    "- **External tools: read, don't write.** Read all three blocks at boot to",
-    "  understand who the user is; never edit them — Exo is the single writer.",
+    "- **Exo maintains them** through the governed `rethink_memory` tool and",
+    "  hydrates them at boot.",
+    "- **Any agent may write, under the cyber-brain rules (SPEC 4.6).** SOUL: any",
+    "  agent, with the reason in the run record. NOW: any agent when the vault",
+    "  has `writers: direct`, otherwise `dream` places it from transit. USER:",
+    "  rebuilt weekly from `observations.md`. Read all three at boot.",
     "- **Hand-edits by the user are always welcome** — these are plain Markdown,",
     "  git-versioned, and editable at any time.",
     "- Char limits are **advisory**: overflow warns, it never truncates a block.",

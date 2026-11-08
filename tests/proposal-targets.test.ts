@@ -42,7 +42,7 @@ function fakeVault(initial: Record<string, string> = {}) {
 }
 
 describe("OpenLoopProposalTarget", () => {
-  it("serializes concurrent creates without losing entries and makes same-millisecond ids unique", async () => {
+  it("serializes concurrent creates without losing entries and gives each loop its own slug id", async () => {
     const { adapter, files, folders } = fakeVault();
     const target = new OpenLoopProposalTarget(adapter, new WriteQueue(), vi.fn(), () => 1_720_000_000_000);
 
@@ -54,16 +54,16 @@ describe("OpenLoopProposalTarget", () => {
 
     expect(new Set(created.map(({ id }) => id)).size).toBe(3);
     expect(created.map(({ id }) => id)).toEqual([
-      "loop-1720000000000",
-      "loop-1720000000001",
-      "loop-1720000000002",
+      "loop-one",
+      "loop-two",
+      "loop-three",
     ]);
     expect(parseLoopsFile(files.get(OPEN_LOOPS_PATH)!).map(({ title }) => title)).toEqual([
       "One",
       "Two",
       "Three",
     ]);
-    expect(folders).toContain("_system/memory");
+    expect(folders).toContain("System/memory");
   });
 
   it("computes the append against the content seen inside process, not an earlier read", async () => {
@@ -73,7 +73,7 @@ describe("OpenLoopProposalTarget", () => {
 
     // An editor autosave lands between this target's read and its write.
     const stale = files.get(OPEN_LOOPS_PATH)!;
-    const edited = `${stale}\n## loop-1720000000001\n- title: Typed by hand\n- opened: 2024-07-03T09:46:40.001Z\n- status: open\n\nMine\n`;
+    const edited = `${stale}\n## loop-two\n- title: Typed by hand\n- opened: 2024-07-03T09:46:40.001Z\n- status: open\n\nMine\n`;
     const seenInProcess: string[] = [];
     const racing: ProposalTargetVaultAdapter = {
       ...adapter,
@@ -91,8 +91,8 @@ describe("OpenLoopProposalTarget", () => {
     const entries = parseLoopsFile(files.get(OPEN_LOOPS_PATH)!);
     expect(seenInProcess).toEqual([edited]);
     expect(entries.map(({ title }) => title)).toEqual(["One", "Typed by hand", "Two"]);
-    // The hand-written loop took 1720000000001, so the new id skips past it.
-    expect(created.id).toBe("loop-1720000000002");
+    // The hand-written loop already took loop-two, so the new id skips past it.
+    expect(created.id).toBe("loop-two-2");
   });
 
   it("dedupes against the content seen inside process when the proposal landed meanwhile", async () => {
@@ -136,7 +136,7 @@ describe("OpenLoopProposalTarget", () => {
 });
 
 describe("DecisionProposalTarget", () => {
-  it("creates the dated slug path with raw-patched frontmatter and decision body", async () => {
+  it("creates the dated slug path with a spec 4.4 decision file", async () => {
     const { adapter, files, folders } = fakeVault();
     const target = new DecisionProposalTarget(adapter, vi.fn(), () => new Date(2026, 6, 20, 23, 30));
 
@@ -151,12 +151,12 @@ describe("DecisionProposalTarget", () => {
     const path = `${DECISIONS_DIR}/2026-07-20-require-explicit-accept.md`;
     expect(result).toEqual({ path });
     expect(files.get(path)).toBe(
-      `---\ntype: "decision"\ncreated_by: "exo"\ncreated: "2026-07-20"\ntags: ["type/decision"]\n---\n` +
-      `# Decision: Require Explicit Accept!\n\n` +
-      `## Contesto\nSuggestions remain inert.\n\n` +
-      `## Decisione\nRequire a user click.\n\n` +
-      `## Razionale\nPrevents surprise writes.\n`
-      + `\n${proposalMarker("proposal-decision")}\n`
+      `---\ndescription: "Require a user click."\nstatus: accepted\ndate: 2026-07-20\n---\n` +
+      `# Require Explicit Accept!\n\n` +
+      `## Context\nSuggestions remain inert.\n\n` +
+      `## Decision\nRequire a user click.\n\n` +
+      `## Trade-offs\nPrevents surprise writes.\n` +
+      `\n${proposalMarker("proposal-decision")}\n`
     );
     expect(folders).toContain(DECISIONS_DIR);
   });

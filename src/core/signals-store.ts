@@ -15,11 +15,11 @@
 
 import { App } from "obsidian";
 import { EMPTY_LEDGER, type SignalLedger, type PlaybookSignal } from "./learning-loop";
-import { exoPaths, LEGACY_MEMORY_ROOT } from "./paths";
+import { exoPaths, DEFAULT_MEMORY_ROOT } from "./paths";
 
 /** Default memory dir — the legacy location for the retired ledger's
  *  fallback; callers on a configured vault pass `paths.memory`. */
-const LEGACY_DIR = exoPaths(LEGACY_MEMORY_ROOT).memory;
+const LEGACY_DIR = exoPaths(DEFAULT_MEMORY_ROOT).memory;
 const signalsPath = (dir: string) => `${dir}/playbook-signals.json`;
 
 function isSignal(x: unknown): x is PlaybookSignal {

@@ -2,7 +2,6 @@ import { Notice } from "obsidian";
 import { memoryStats, memoryActions, formatAge } from "../../core/actions-hub";
 import { gatherLoops } from "../../core/capability-scan";
 import { localDate } from "../../core/recent-chats";
-import { exoPaths } from "../../core/paths";
 import { buildGroupHeader, buildStatusRow, buildRowScaffold, openNote, type HubTabContext } from "./shared";
 
 /** Harvests listed in the digest. */
@@ -16,7 +15,7 @@ const DIGEST_ROWS = 10;
 export async function renderMemoryTab(host: HTMLElement, ctx: HubTabContext): Promise<void> {
   host.empty();
   const s = ctx.plugin.settings;
-  const paths = exoPaths(s.memoryRoot);
+  const paths = ctx.plugin.paths;
   const now = Date.now();
   const inboxPath = `${paths.inbox}/${localDate(now)}.md`;
 
@@ -92,9 +91,8 @@ export async function renderMemoryTab(host: HTMLElement, ctx: HubTabContext): Pr
   host.appendChild(buildStatusRow("Read at boot", caps.bootRead ? "on" : "off", caps.bootRead));
   host.appendChild(buildStatusRow("Write (gated)", caps.ledgerWrite ? "on" : "off", caps.ledgerWrite));
   const files: [string, string][] = [
-    ["vault-context.md", paths.vaultContext],
-    ["preferences.md", paths.preferences],
-    ["AGENTS.md", "AGENTS.md"],
+    ["AGENTS.md", paths.vaultContext],
+    ["observations.md", paths.observations],
   ];
   for (const [label, path] of files) {
     const { row, right } = buildRowScaffold(label, undefined, undefined);

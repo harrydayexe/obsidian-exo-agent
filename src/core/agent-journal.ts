@@ -5,15 +5,12 @@
  * inbox every day should read as a line in your day, not as a second inbox of
  * "no action needed" files to clear.
  *
- * Pure: the daily note's path and its content come from the caller.
+ * Pure: the daily note's path, its content and the heading (`daily_heading` of
+ * the vault's AGENTS.md, see brain-config.ts) come from the caller.
  */
 
 /** Marker a run uses to hand back its one-line summary. */
 export const JOURNAL_MARKER = "JOURNAL:";
-
-/** Heading the lines are collected under, so they stay together and a human
- *  can fold them away. */
-export const JOURNAL_HEADING = "### 🤖 Agents";
 
 /** A journal line is a glance, not a report. Anything longer is a report that
  *  lost its way. */
@@ -53,11 +50,11 @@ function clamp(s: string): string {
   return s.length > JOURNAL_MAX ? `${s.slice(0, JOURNAL_MAX - 1).trimEnd()}…` : s;
 }
 
-/** `- 14:32 **Inbox Triager** — filed 2 notes into Atlas/` */
+/** `- 14:32 **Inbox Triager** filed 2 notes into Atlas/` (spec 4.5). */
 export function journalLine(agentName: string, at: number, summary: string, timeLabel?: string): string {
   const d = new Date(at);
   const time = timeLabel ?? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  return `- ${time} **${agentName}** — ${clamp(stripMarkup(summary))}`;
+  return `- ${time} **${agentName}** ${clamp(stripMarkup(summary))}`;
 }
 
 /**

@@ -23,12 +23,12 @@ import {
 import { dueLoops, type LoopEntry } from "../core/open-loops";
 import type { ProposalKind } from "../core/proposals";
 import type { WriteQueue } from "../core/write-queue";
-import { exoPaths, LEGACY_MEMORY_ROOT, type ExoPaths } from "../core/paths";
+import { exoPaths, DEFAULT_MEMORY_ROOT, type ExoPaths } from "../core/paths";
 
 /** Legacy default review-note path. Live callers pass the
  *  configured `paths.review`; kept as the module-level default so the many
  *  existing call sites and tests stay byte-identical. */
-export const DAILY_PULSE_TARGET_PATH = exoPaths(LEGACY_MEMORY_ROOT).review;
+export const DAILY_PULSE_TARGET_PATH = exoPaths(DEFAULT_MEMORY_ROOT).review;
 export const DAILY_PULSE_START_MARKER = "<!-- exo:daily-pulse:start -->";
 export const DAILY_PULSE_END_MARKER = "<!-- exo:daily-pulse:end -->";
 export const DAILY_PULSE_FIRST_RUN_LOOKBACK_MS = 24 * 60 * 60 * 1_000;
@@ -415,7 +415,7 @@ function warningLabel(source: DailyPulseCollectionSource): string {
 export function renderDailyPulseBlock(
   pulse: DailyPulse,
   warnings: readonly DailyPulseCollectionWarning[],
-  paths: ExoPaths = exoPaths(LEGACY_MEMORY_ROOT)
+  paths: ExoPaths = exoPaths(DEFAULT_MEMORY_ROOT)
 ): string {
   const lines = [
     "# Daily Pulse",
@@ -493,7 +493,7 @@ export function writeDailyPulse(
   queue: WriteQueue,
   pulse: DailyPulse,
   warnings: readonly DailyPulseCollectionWarning[],
-  paths: ExoPaths = exoPaths(LEGACY_MEMORY_ROOT)
+  paths: ExoPaths = exoPaths(DEFAULT_MEMORY_ROOT)
 ): Promise<DailyPulseWriteResult> {
   const reviewPath = paths.review;
   return queue.enqueue(async () => {
@@ -525,7 +525,7 @@ export async function generateAndWriteDailyPulse(
   adapter: DailyPulseFileAdapter,
   queue: WriteQueue,
   options: DailyPulseCollectionOptions,
-  paths: ExoPaths = exoPaths(LEGACY_MEMORY_ROOT)
+  paths: ExoPaths = exoPaths(DEFAULT_MEMORY_ROOT)
 ): Promise<GeneratedDailyPulse> {
   const collected = await collectDailyPulseInput(sources, { ...options, reviewPath: options.reviewPath ?? paths.review });
   const pulse = buildDailyPulse(collected.input);

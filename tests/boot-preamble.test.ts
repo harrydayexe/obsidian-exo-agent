@@ -35,11 +35,11 @@ const caps = (over: Partial<MemorySettings> = {}) => memoryCaps(settings(over), 
 
 describe("buildBootPreamble", () => {
   it("is empty when boot reads are off", async () => {
-    const { app } = makeApp({ "_system/vault-context.md": { content: "ctx", mtime: 1 } });
+    const { app } = makeApp({ "AGENTS.md": { content: "ctx", mtime: 1 } });
     expect(await buildBootPreamble(app, { caps: caps({ memoryReadEnabled: false }), tools: true, paths: P })).toBe("");
   });
   it("adds the automatic-memory note, with recent_chats only when tools are on", async () => {
-    const { app } = makeApp({ "_system/vault-context.md": { content: "ctx", mtime: 1 } });
+    const { app } = makeApp({ "AGENTS.md": { content: "ctx", mtime: 1 } });
     const withTools = await buildBootPreamble(app, { caps: caps(), tools: true, paths: P });
     const noTools = await buildBootPreamble(app, { caps: caps(), tools: false, paths: P });
     expect(withTools).toContain("### Memory");
@@ -50,7 +50,7 @@ describe("buildBootPreamble", () => {
     expect(off).not.toContain("### Memory\n");
   });
   it("adds the rethink note only when rethink is granted and tools are on", async () => {
-    const { app } = makeApp({ "_system/vault-context.md": { content: "ctx", mtime: 1 } });
+    const { app } = makeApp({ "AGENTS.md": { content: "ctx", mtime: 1 } });
     expect(await buildBootPreamble(app, { caps: caps({ agentFolderEnabled: true }), tools: true, paths: P })).toContain("rethink_memory");
     expect(await buildBootPreamble(app, { caps: caps(), tools: true, paths: P })).not.toContain("rethink_memory");
   });
@@ -58,7 +58,7 @@ describe("buildBootPreamble", () => {
 
 describe("BootPreambleCache", () => {
   it("reuses the preamble while its inputs are unchanged", async () => {
-    const { app, reads } = makeApp({ "_system/vault-context.md": { content: "ctx", mtime: 1 } });
+    const { app, reads } = makeApp({ "AGENTS.md": { content: "ctx", mtime: 1 } });
     const cache = new BootPreambleCache();
     const a = await cache.get(app, { caps: caps(), tools: true, paths: P });
     const n = reads();
@@ -67,17 +67,17 @@ describe("BootPreambleCache", () => {
     expect(reads()).toBe(n);
   });
   it("rebuilds when the caps change", async () => {
-    const { app } = makeApp({ "_system/vault-context.md": { content: "ctx", mtime: 1 } });
+    const { app } = makeApp({ "AGENTS.md": { content: "ctx", mtime: 1 } });
     const cache = new BootPreambleCache();
     const on = await cache.get(app, { caps: caps(), tools: true, paths: P });
     const off = await cache.get(app, { caps: caps({ autoMemory: false }), tools: true, paths: P });
     expect(on).not.toBe(off);
   });
   it("rebuilds when a source note is edited (mtime) or the memory root moves", async () => {
-    const { app, files } = makeApp({ "_system/vault-context.md": { content: "first", mtime: 1 } });
+    const { app, files } = makeApp({ "_system/identity/observations.md": { content: "first", mtime: 1 } });
     const cache = new BootPreambleCache();
     expect(await cache.get(app, { caps: caps(), tools: true, paths: P })).toContain("first");
-    files["_system/vault-context.md"] = { content: "second", mtime: 2 };
+    files["_system/identity/observations.md"] = { content: "second", mtime: 2 };
     expect(await cache.get(app, { caps: caps(), tools: true, paths: P })).toContain("second");
     expect(await cache.get(app, { caps: caps(), tools: true, paths: exoPaths("_exo") })).not.toContain("second");
   });

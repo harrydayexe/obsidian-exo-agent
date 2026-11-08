@@ -4,6 +4,7 @@ import { MemoryHarvester, type HarvestChat, type HarvesterDeps, type HarvestSour
 import { HarvestLog } from "../src/obsidian/harvest-log";
 import { memoryCaps } from "../src/core/memory-caps";
 import { exoPaths } from "../src/core/paths";
+import { DEFAULT_BRAIN, type BrainConfig } from "../src/core/brain-config";
 import { WriteQueue } from "../src/core/write-queue";
 import { HARVEST_IDLE_MS } from "../src/core/memory-harvest";
 
@@ -44,7 +45,7 @@ function fakeApp(initial: Record<string, string>) {
   return { app, files };
 }
 
-const AGENTS = "# Contract\n## Memoria\n| persona | nota in `CRM/People/` |\n| inbox | `_exo/memory/inbox/AAAA-MM-GG.md` |\n## Mappa\n";
+const AGENTS = "# Contract\n## Memoria\n| persona | nota in `CRM/People/` |\n| transit | `_exo/memory/inbox/exo/AAAA-MM-GG.md` |\n## Mappa\n";
 
 function setup(opts: {
   chats: HarvestChat[];
@@ -52,6 +53,7 @@ function setup(opts: {
   budget?: boolean;
   git?: (args: string[]) => Promise<string>;
   source?: HarvestSource | null;
+  brain?: Partial<BrainConfig>;
 }) {
   const { app, files } = fakeApp({
     "AGENTS.md": AGENTS,
@@ -78,6 +80,7 @@ function setup(opts: {
         { surface: "chat" },
       ),
     paths: () => exoPaths("_exo"),
+    brain: async () => ({ ...DEFAULT_BRAIN, ...(opts.brain ?? {}) }),
     source: () => (opts.source === undefined ? source : opts.source),
     utility: async (prompt) => {
       prompts.push(prompt);
@@ -119,7 +122,7 @@ const DECIDE = JSON.stringify({
       candidate: 0,
       path: "CRM/People/Anna.md",
       oldLine: "- Designer at Acme",
-      newText: `Head of design at Acme (dal ${today}; prima Designer at Acme)`,
+      newText: `Head of design at Acme (dal ${today}; prima Designer at Acme)`, // a tail the model wrote itself is dropped
     },
   ],
 });
@@ -129,7 +132,7 @@ describe("MemoryHarvester", () => {
     const chat = chatWith();
     const { harvester, files, marks, prompts, notices, logFile } = setup({ chats: [chat], replies: [EXTRACT, DECIDE] });
     await harvester.tick();
-    expect(files.get("CRM/People/Anna.md")).toBe(`# Anna\n## Work\n- Head of design at Acme (dal ${today}; prima Designer at Acme) [fonte: chat "Team update" (obsidian://exo-chat?id=c1&msg=0)]\n`);
+    expect(files.get("CRM/People/Anna.md")).toBe(`# Anna\n## Work\n- Head of design at Acme [source: chat "Team update" (obsidian://exo-chat?id=c1&msg=0); since: ${today}; was: Designer at Acme]\n`);
     expect(marks).toEqual([["c1", 2]]);
     // The decider saw the vault's own rules and the exact line to update.
     expect(prompts[1]).toContain("## Memoria");
@@ -207,6 +210,16 @@ describe("MemoryHarvester", () => {
     expect(files.get("CRM/People/Anna.md")).toBe("# Anna\n## Work\n- Designer at Acme\n");
   });
 
+  it("writers: inbox (the vault's AGENTS.md): the change waits in Exo's transit file for dream, the note is untouched", async () => {
+    const { harvester, files, logFile } = setup({ chats: [chatWith()], replies: [EXTRACT, DECIDE], brain: { writers: "inbox" } });
+    await harvester.tick();
+    expect(files.get("CRM/People/Anna.md")).toBe("# Anna\n## Work\n- Designer at Acme\n");
+    expect(files.get(`_exo/memory/inbox/exo/${today}.md`)).toBe(
+      `# Transit ${today}\n- [fact] Head of design at Acme -> CRM/People/Anna.md [source: chat "Team update" (obsidian://exo-chat?id=c1&msg=0); since: ${today}; was: Designer at Acme]\n`,
+    );
+    expect(JSON.parse(logFile.content!)[0].writes[0].path).toBe(`_exo/memory/inbox/exo/${today}.md`);
+  });
+
   it("budget denied: no model call and the watermark stays, so the next tick retries", async () => {
     const { harvester, prompts, marks } = setup({ chats: [chatWith()], replies: [EXTRACT, DECIDE], budget: false });
     await harvester.tick();
@@ -259,13 +272,13 @@ describe("MemoryHarvester", () => {
     const decide = JSON.stringify({
       decisions: [
         { op: "update", candidate: 0, path: "CRM/People/Anna.md", oldLine: "- Designer at Acme", newText: "Head of design at Acme" },
-        { op: "add", candidate: 1, path: `_exo/memory/inbox/${today}.md`, text: "rclone has a gdrive remote" },
+        { op: "add", candidate: 1, path: `_exo/memory/inbox/exo/${today}.md`, text: "rclone has a gdrive remote" },
       ],
     });
     const { harvester, logFile } = setup({ chats: [chatWith()], replies: [extract, decide], git });
     await harvester.tick();
     const commit = calls.find((c) => c[0] === "commit")!;
-    expect(commit).toEqual(["commit", "-m", "exo: memory harvest: 1 scritture (Team update)", "--", `_exo/memory/inbox/${today}.md`]);
+    expect(commit).toEqual(["commit", "-m", "exo: memory harvest: 1 scritture (Team update)", "--", `_exo/memory/inbox/exo/${today}.md`]);
     const rec = JSON.parse(logFile.content!)[0];
     expect(rec.sha).toBe("abc123");
     expect(rec.uncommitted).toEqual(["CRM/People/Anna.md"]);

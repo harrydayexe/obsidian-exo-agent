@@ -83,7 +83,7 @@ describe("Daily Pulse non-destructive writer", () => {
 
     const result = await writeDailyPulse(file, new WriteQueue(), pulse(), []);
 
-    expect(result).toEqual({ path: "_system/review.md", created: true, changed: true });
+    expect(result).toEqual({ path: "System/review.md", created: true, changed: true });
     expect(file.content()).toMatch(/^---\ntype: reference\ntags:\n[ ]{2}- type\/reference\ncreated_by: exo\nlast_updated: 2026-07-20\nlast_edited_by: exo\n---\n\n/);
     expect(file.content()).toContain(`${DAILY_PULSE_START_MARKER}\n`);
     expect(file.content()).toContain(`\n${DAILY_PULSE_END_MARKER}\n`);
@@ -139,7 +139,7 @@ describe("Daily Pulse non-destructive writer", () => {
 
     const result = await writeDailyPulse(second, new WriteQueue(), pulse(), []);
 
-    expect(result).toEqual({ path: "_system/review.md", created: false, changed: false });
+    expect(result).toEqual({ path: "System/review.md", created: false, changed: false });
     expect(second.writes).not.toHaveBeenCalled();
   });
 
@@ -147,7 +147,7 @@ describe("Daily Pulse non-destructive writer", () => {
     const content = renderDailyPulseBlock(pulse(), []);
 
     expect(content).toContain("**Morning sync**");
-    expect(content).toContain("[[_system/memory/open-loops|Follow up]]");
+    expect(content).toContain("[[System/memory/loops|Follow up]]");
     expect(content).toContain("[[Active/Projects/Exo|Exo]]");
     expect(content).toContain("Action: [Review automation](obsidian://exo-daily-pulse?target=automation)");
     expect(content).toContain('<!-- exo:daily-pulse:cta {"kind":"review","target":"automation","id":"run-1"} -->');

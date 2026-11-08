@@ -96,25 +96,8 @@ export async function readBootContext(app: App, paths: ExoPaths, opts: BootOpts 
   const parts: string[] = [];
   const ctx = await read(paths.vaultContext, 3500);
   if (ctx) parts.push(`### Vault context\n${ctx}`);
-  const prefs = await read(paths.preferences, 2500);
-  if (prefs) parts.push(`### Preferences\n${prefs}`);
-
-  // The index carries the trigger for each rule (when to load it) — a bare file-name
-  // list never does, so the model can't tell which rules apply without reading every
-  // one. Prefer it; fall back to the name list when no index exists.
-  const rulesIndex = await read(`${paths.rules}/_index.md`, MAX_RULES_INDEX);
-  if (rulesIndex) {
-    parts.push(`### Active rules (index — read the file for detail)\n${rulesIndex}`);
-  } else {
-    const rulesPrefix = `${paths.rules}/`;
-    const ruleFiles = app.vault
-      .getMarkdownFiles()
-      .filter((f) => f.path.startsWith(rulesPrefix));
-    const rules = ruleFiles.slice(0, MAX_RULES).map((f) => `- ${f.basename}`);
-    if (ruleFiles.length > MAX_RULES) rules.push(`- …and ${ruleFiles.length - MAX_RULES} more`);
-    if (rules.length) parts.push(`### Active rules (read the file for detail)\n${rules.join("\n")}`);
-  }
-
+  // Loops come right after the vault context: the overall boot cap trims from the
+  // end, and open commitments matter more than observations or the rules index.
   const loopsRaw = await readFull(paths.openLoops);
   if (loopsRaw) {
     const entries: LoopEntry[] = parseLoopsFile(loopsRaw);
@@ -132,6 +115,25 @@ export async function readBootContext(app: App, paths: ExoPaths, opts: BootOpts 
       parts.push(cap(`### Open loops (due/active)\n${lines.join("\n")}`, MAX_LOOP_SECTION));
     }
   }
+  const observed = await read(paths.observations, 2500);
+  if (observed) parts.push(`### Observations about the user\n${observed}`);
+
+  // The index carries the trigger for each rule (when to load it) — a bare file-name
+  // list never does, so the model can't tell which rules apply without reading every
+  // one. Prefer it; fall back to the name list when no index exists.
+  const rulesIndex = await read(`${paths.rules}/_index.md`, MAX_RULES_INDEX);
+  if (rulesIndex) {
+    parts.push(`### Active rules (index — read the file for detail)\n${rulesIndex}`);
+  } else {
+    const rulesPrefix = `${paths.rules}/`;
+    const ruleFiles = app.vault
+      .getMarkdownFiles()
+      .filter((f) => f.path.startsWith(rulesPrefix));
+    const rules = ruleFiles.slice(0, MAX_RULES).map((f) => `- ${f.basename}`);
+    if (ruleFiles.length > MAX_RULES) rules.push(`- …and ${ruleFiles.length - MAX_RULES} more`);
+    if (rules.length) parts.push(`### Active rules (read the file for detail)\n${rules.join("\n")}`);
+  }
+
 
   // Nothing to say at all (no sections AND no identity) → empty, exactly as before.
   if (!parts.length && !identity) return "";
@@ -177,7 +179,7 @@ function preambleKey(app: App, inputs: PreambleInputs): string {
   const { paths } = inputs;
   const sources = [
     paths.vaultContext,
-    paths.preferences,
+    paths.observations,
     `${paths.rules}/_index.md`,
     paths.openLoops,
     ...AGENT_BLOCKS.map((spec) => `${paths.agentDir}/${spec.name}.md`),

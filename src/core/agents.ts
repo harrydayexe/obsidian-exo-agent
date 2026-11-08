@@ -3,9 +3,9 @@
  *
  * A canonical vault agent is a human-readable bundle:
  *
- *   _system/agents/<slug>/SOUL.md   identity and judgment
- *   _system/agents/<slug>/AGENT.md  prompt plus runtime contract frontmatter
- *   _system/memory/agents/<slug>.md curated role memory
+ *   <system>/agents/<slug>/SOUL.md   identity and judgment
+ *   <system>/agents/<slug>/AGENT.md  prompt plus runtime contract frontmatter
+ *   <system>/memory/agents/<slug>.md curated role memory
  *
  * `.claude/agents` and `.codex/agents` may expose thin runtime adapters, but the
  * vault bundle is the source of truth. The join key is the slug.
@@ -54,7 +54,7 @@ export type AgentSource = "vault" | "user" | "codex" | "plugin";
 
 export const AGENT_SOURCE_ORDER: readonly AgentSource[] = ["vault", "user", "codex", "plugin"];
 
-/** A runnable agent prompt, preferably from `_system/agents/<slug>/AGENT.md`. */
+/** A runnable agent prompt, preferably from `<system>/agents/<slug>/AGENT.md`. */
 export interface AgentBrain {
   /** Scope-prefixed filename base — the join key with the contract sidecar. */
   slug: string;
@@ -314,7 +314,7 @@ export function parseCodexAgentToml(raw: string, slug: string, source: AgentSour
 
 /** True when a file in the agents folder is an Exo contract rather than an
  *  unrelated note that happens to live there. Vaults predating this feature can
- *  have `_system/agents/*.md` notes with other purposes — treating those as
+ *  have `<system>/agents/*.md` notes with other purposes, treating those as
  *  contracts (or scaffolding over them) would be destructive. */
 export function isAgentSidecar(raw: string): boolean {
   const fm = frontmatterBlock(raw);
@@ -537,7 +537,7 @@ export interface SidecarParse {
   warnings: string[];
 }
 
-/** Parse a canonical `_system/agents/<slug>/AGENT.md`. Unknown keys are ignored so the file can
+/** Parse a canonical `<system>/agents/<slug>/AGENT.md`. Unknown keys are ignored so the file can
  *  carry vault frontmatter (tags, created_by, …) alongside the contract. */
 export function parseAgentSidecar(raw: string, slug: string): SidecarParse {
   const warnings: string[] = [];

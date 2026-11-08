@@ -3,7 +3,7 @@
  *
  * Joins the two halves of an agent: the CLI-native **brain**
  * (`.claude/agents/<slug>.md`, discovered across scopes, never written) and the
- * Exo **contract** (`<memoryRoot>/agents/<slug>.md`, owned here). Every write
+ * Exo **contract** (`<system>/agents/<slug>.md`, owned here). Every write
  * goes through one shared `WriteQueue`, matching the contract already used by
  * the open-loops ledger.
  *
@@ -39,13 +39,15 @@ import {
   agentMemoryPath,
   initialAgentMemory,
   ledgerFileName,
+  ledgerHeader,
+  lineReceipts,
   parseAgentLedger,
   serializeAgentRun,
   sortRuns,
   type AgentRunRecord,
 } from "../core/agent-ledger";
 import { seededContract } from "../core/agent-seeds";
-import { appendUnderHeading, journalAlreadyHas, JOURNAL_HEADING } from "../core/agent-journal";
+import { appendUnderHeading, journalAlreadyHas } from "../core/agent-journal";
 import { listAgentBrains } from "../core/capability-desc";
 import type { ExoPaths } from "../core/paths";
 import { WriteQueue } from "../core/write-queue";
@@ -333,12 +335,34 @@ export class AgentStore {
     await queue
       .enqueue(async () => {
         await vault.ensureFolder(paths.agentRuns);
-        const existing = (await vault.exists(path)) ? await vault.read(path) : "";
-        await vault.write(path, existing + (existing && !existing.endsWith("\n") ? "\n" : "") + serializeAgentRun(record));
+        const existing = (await vault.exists(path)) ? await vault.read(path) : ledgerHeader(record.startedAt);
+        await vault.write(path, existing.replace(/\s*$/, "\n") + serializeAgentRun(record));
       })
       .catch((err) => {
         console.warn("[Exo] agent ledger append failed:", err);
       });
+  }
+
+  /** The `write:` receipts for a headless run: its checkpoint holds each file's
+   *  content before the run, the vault what it holds now. */
+  async receipts(result: { writes: readonly string[]; checkpoint: ReadonlyMap<string, string | null> }): Promise<string[]> {
+    const { vault } = this.deps;
+    const out: string[] = [];
+    for (const path of result.writes) {
+      const before = result.checkpoint.get(path);
+      if (before === undefined) {
+        out.push(`${path} | (none) | (none)`);
+        continue;
+      }
+      let after: string | null = null;
+      try {
+        if (await vault.exists(path)) after = await vault.read(path);
+      } catch {
+        /* unreadable now: the receipt says the file is gone */
+      }
+      out.push(...lineReceipts(path, before, after));
+    }
+    return out;
   }
 
   /** Runs recorded in the ledger file covering `at` (default: now), newest first. */
@@ -353,7 +377,7 @@ export class AgentStore {
   }
 
   /**
-   * Append one line to today's daily note, under the agents heading.
+   * Append one line to today's daily note, under `heading` (`daily_heading`).
    *
    * Serialized on the shared queue and read-modify-write, because the daily
    * note is a file the user may have open and other plugins may also append to.
@@ -361,7 +385,7 @@ export class AgentStore {
    * is dropped rather than conjuring a file the user did not ask for — the
    * ledger still has the run. Returns whether the line landed.
    */
-  async appendJournal(dailyPath: string, line: string): Promise<boolean> {
+  async appendJournal(dailyPath: string, line: string, heading: string): Promise<boolean> {
     const { vault, queue } = this.deps;
     if (!dailyPath) return false;
     return queue
@@ -369,7 +393,7 @@ export class AgentStore {
         if (!(await vault.exists(dailyPath))) return false;
         const content = await vault.read(dailyPath);
         if (journalAlreadyHas(content, line)) return false;
-        await vault.write(dailyPath, appendUnderHeading(content, JOURNAL_HEADING, line));
+        await vault.write(dailyPath, appendUnderHeading(content, heading, line));
         return true;
       })
       .catch((err) => {

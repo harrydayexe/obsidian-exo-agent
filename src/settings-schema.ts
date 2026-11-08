@@ -8,13 +8,13 @@ import type { PermissionMode, ProviderId } from "./providers/types";
 import type { AutomationConfig } from "./core/automations";
 import { initialDailyPulseReviewState, type DailyPulseReviewState } from "./core/daily-pulse";
 import type { MemorySetup } from "./core/vault-setup";
-import { exoPaths, LEGACY_MEMORY_ROOT } from "./core/paths";
+import { exoPaths, DEFAULT_MEMORY_ROOT } from "./core/paths";
 import type { StoredShareRole } from "./core/collab-bridge";
 import type { ScheduledPrompt } from "./core/scheduled-prompts";
 
 /** Legacy default for the request-queue folder (kept for existing installs).
  *  Exported because the settings tab uses it as the field placeholder. */
-export const LEGACY_QUEUE_FOLDER = exoPaths(LEGACY_MEMORY_ROOT).queue;
+export const LEGACY_QUEUE_FOLDER = exoPaths(DEFAULT_MEMORY_ROOT).queue;
 
 /** What Exo remembers about a note tied to an Exo Collabo document, shared
  *  from this vault or imported into it. `ownerSecret` is the promote/revoke
@@ -148,10 +148,6 @@ export interface MVASettings {
   exoQueueEnabled: boolean;
   /** Cartella della coda richieste (vault-relative). */
   exoQueueFolder: string;
-  /** Root of Exo's memory layer (vault-relative). All memory paths derive from
-   *  this (see core/paths.ts). Empty = unset → auto-detected at boot: an
-   *  existing legacy-root vault keeps it, a fresh vault adopts the default. */
-  memoryRoot: string;
   /** The onboarding memory-scaffold choice ("none" | "minimal" | "full").
    *  `undefined` = not chosen yet → the empty-state picker is offered. Recording
    *  any value (including "none") dismisses it permanently. Pre-picker installs
@@ -175,7 +171,7 @@ export interface MVASettings {
    *  scheduler in main.ts and the Cockpit Automations panel read these. */
   automations: AutomationConfig[];
   /** One-shot guard for the unified automation-files migration (v2): settings
-   *  playbooks + agent contract sidecars → `<memoryRoot>/automations/*.md`. */
+   *  playbooks + agent contract sidecars → `<system>/automations/*.md`. */
   automationsMigrated: boolean;
   /** Load external MCP tools (Gmail/Slack/Calendar…) in headless playbook runs —
    *  Dia-style digest sources. Read-only enforced by the headless resolver
@@ -312,7 +308,6 @@ export const DEFAULT_SETTINGS: MVASettings = {
   proposalTurnSuggestions: false,
   exoQueueEnabled: true,
   exoQueueFolder: LEGACY_QUEUE_FOLDER,
-  memoryRoot: "",
   cockpitOnStartup: false,
   chatsMode: "activity",
   chatsCollapsed: [],

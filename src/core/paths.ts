@@ -1,26 +1,14 @@
 /**
- * Exo memory-layer paths — one source of truth, all derived from a single
- * configurable root (`settings.memoryRoot`).
+ * Exo memory-layer paths: one source of truth, all derived from one root.
  *
- * Historically Exo's memory paths were ~127 hardcoded `_system/…` string
- * literals scattered across 34 files, which forced Mario's personal vault
- * structure onto every install. Centralizing them here makes the root a
- * one-line change and lets a fresh vault use a neutral, tool-owned folder
- * (`_exo/`) — or none at all — while an existing `_system/` vault keeps its
- * layout via boot-time auto-detect (see `detectMemoryRoot` + loadSettings).
- *
- * Pure module (no Obsidian imports) so it stays unit-testable, mirroring
- * `vault-setup.ts`.
+ * The layout is the cyber-brain spec (../cyber-brain/SPEC.md section 2). The
+ * root is the vault's `AGENTS.md` frontmatter `paths.system` (see
+ * `brain-config.ts`), `System` when the vault has none. Pure module (no
+ * Obsidian imports) so it stays unit-testable.
  */
 
-/** Default root for a fresh install: visible (indexed by Obsidian's TFile API,
- *  unlike a dotfolder), underscore-prefixed so it sorts to the top and reads as
- *  tool-owned, and human-readable so the user can inspect what Exo remembers. */
-export const DEFAULT_MEMORY_ROOT = "_exo";
-
-/** The legacy/marioverse root. A vault that already has this folder keeps it,
- *  so existing installs never migrate. */
-export const LEGACY_MEMORY_ROOT = "_system";
+/** The spec's default system folder. */
+export const DEFAULT_MEMORY_ROOT = "System";
 
 /** Every vault-relative path Exo's memory features read or write, split into
  *  MECHANISM (the tool's own operational data — needed by any vault that uses
@@ -30,8 +18,8 @@ export interface ExoPaths {
   root: string;
   // ── mechanism ────────────────────────────────────────────────────────────
   memory: string;
-  /** Memory harvest transit: one `YYYY-MM-DD.md` per day for facts with no
-   *  obvious home in the vault. The only file the harvest may create. */
+  /** Exo's transit folder (`memory/inbox/exo`): one `YYYY-MM-DD.md` per day of
+   *  entries the nightly `dream` places. The only file the harvest may create. */
   inbox: string;
   queue: string;
   reports: string;
@@ -41,7 +29,7 @@ export interface ExoPaths {
    *  lives in `.claude/agents/`; this folder holds only triggers/scope/autonomy,
    *  because `.claude/` is gitignored and does not sync to mobile. */
   agents: string;
-  /** Append-only run ledger, one file per month. */
+  /** Run log (spec 4.5), one `YYYY-MM.md` per month. */
   agentRuns: string;
   /** Settled chats mirrored into the vault, one note per conversation. Beside
    *  `reports/` and `agents/` because it is the same kind of thing: output Exo
@@ -54,11 +42,13 @@ export interface ExoPaths {
   agentMemory: string;
   openLoops: string;
   workflowSignals: string;
-  // ── content (marioverse "Full" template only) ────────────────────────────
+  // ── content (spec identity and memory) ───────────────────────────────────
+  /** `identity/`: SOUL, USER, NOW. */
   agentDir: string;
+  /** The vault's entry point, `AGENTS.md` at the vault root. */
   vaultContext: string;
-  preferences: string;
-  mentalModel: string;
+  /** `identity/observations.md`: append-only observations about the user. */
+  observations: string;
   rules: string;
   decisions: string;
 }
@@ -72,31 +62,22 @@ export function exoPaths(root: string): ExoPaths {
   return {
     root: r,
     memory,
-    inbox: `${memory}/inbox`,
+    inbox: `${memory}/inbox/exo`,
     queue: `${r}/exo-queue`,
     reports: `${r}/reports`,
     review: `${r}/review.md`,
     mentions: `${r}/mentions`,
     agents: `${r}/agents`,
-    agentRuns: `${r}/agents/runs`,
+    agentRuns: `${r}/runs`,
     chats: `${r}/chats`,
     automations: `${r}/automations`,
     agentMemory: `${memory}/agents`,
-    openLoops: `${memory}/open-loops.md`,
+    openLoops: `${memory}/loops.md`,
     workflowSignals: `${memory}/workflow-signals.json`,
-    agentDir: `${r}/agent`,
-    vaultContext: `${r}/vault-context.md`,
-    preferences: `${memory}/preferences/preferences.md`,
-    mentalModel: `${memory}/mental-model.md`,
+    agentDir: `${r}/identity`,
+    vaultContext: "AGENTS.md",
+    observations: `${r}/identity/observations.md`,
     rules: `${memory}/rules`,
     decisions: `${memory}/decisions`,
   };
-}
-
-/** Resolve the root for an install whose `memoryRoot` isn't set yet: a vault
- *  that already has a `_system/` layer keeps it (existing installs never
- *  migrate); everything else adopts the neutral `_exo/` default. The caller
- *  passes the precomputed existence check so this stays pure/testable. */
-export function detectMemoryRoot(legacyExists: boolean): string {
-  return legacyExists ? LEGACY_MEMORY_ROOT : DEFAULT_MEMORY_ROOT;
 }

@@ -5,10 +5,10 @@
  * guarantees can be tested without loading Obsidian. Plugin wiring must pass
  * the same shared queues used by the existing Open Loops and settings paths.
  */
-import { formatLoop, parseLoopsFile, type LoopEntry } from "../core/open-loops";
-import { patchFrontmatter } from "../core/frontmatter-patch";
+import { LOOPS_FILE_HEADER, parseLoopsFile, uniqueLoopId, writeLoops, type LoopEntry } from "../core/open-loops";
+import { formatDecision } from "../core/decision-record";
 import { uniquePlaybookName } from "../core/learning-loop";
-import { exoPaths, LEGACY_MEMORY_ROOT } from "../core/paths";
+import { exoPaths, DEFAULT_MEMORY_ROOT } from "../core/paths";
 import type { WriteQueue } from "../core/write-queue";
 import type {
   DecisionCaptureInput,
@@ -21,8 +21,8 @@ type DecisionTarget = ProposalAcceptanceDeps["decisions"];
 type PlaybookTarget = ProposalAcceptanceDeps["playbooks"];
 
 /** Legacy defaults for tests/fallback; the live plugin passes `plugin.paths`. */
-export const OPEN_LOOPS_PATH = exoPaths(LEGACY_MEMORY_ROOT).openLoops;
-export const DECISIONS_DIR = exoPaths(LEGACY_MEMORY_ROOT).decisions;
+export const OPEN_LOOPS_PATH = exoPaths(DEFAULT_MEMORY_ROOT).openLoops;
+export const DECISIONS_DIR = exoPaths(DEFAULT_MEMORY_ROOT).decisions;
 
 /** Invisible durable key carried by Markdown-backed proposal targets. */
 export function proposalMarker(proposalId: string): string {
@@ -69,31 +69,27 @@ export class OpenLoopProposalTarget implements OpenLoopTarget {
           return current;
         }
 
-        // Date.now() alone can collide when two proposals are accepted in the
-        // same millisecond. Re-check against the ledger content while still
-        // inside the shared queue and advance the numeric suffix until unused.
-        const taken = new Set(entries.map(({ id }) => id));
-        let openedAt = this.now();
-        while (taken.has(`loop-${openedAt}`)) openedAt++;
-
+        // Two proposals can share a title: the id is made unique against the
+        // ledger content while still inside the shared queue.
         const entry: LoopEntry = {
-          id: `loop-${openedAt}`,
+          id: uniqueLoopId(input.title, entries.map(({ id }) => id)),
           title: input.title,
           note: withMarker(input.note, input.proposalId),
-          openedAt,
+          openedAt: this.now(),
           status: "open",
+          owner: "user",
           ...(input.resurface ? { resurface: input.resurface } : {}),
           ...(input.tags?.length ? { tags: input.tags } : {}),
         };
         result = { id: entry.id, written: true };
-        return `${[...entries, entry].map(formatLoop).join("\n\n")}\n`;
+        return writeLoops(current, [...entries, entry]);
       };
 
       if (this.vault.getFile(this.openLoopsPath)) {
         await this.vault.process(this.openLoopsPath, append);
       } else {
         await this.vault.ensureFolder(this.openLoopsPath);
-        await this.vault.create(this.openLoopsPath, append(""));
+        await this.vault.create(this.openLoopsPath, append(LOOPS_FILE_HEADER));
       }
       if (!result) throw new Error(`Open loops ledger not updated: ${this.openLoopsPath}`);
       if (!result.written) return { id: result.id, path: this.openLoopsPath };
@@ -134,18 +130,7 @@ export class DecisionProposalTarget implements DecisionTarget {
       throw new Error(`Already exists: ${path}`);
     }
 
-    const body =
-      `# Decision: ${input.title}\n\n` +
-      `## Contesto\n${input.context}\n\n` +
-      `## Decisione\n${input.decision}\n\n` +
-      `## Razionale\n${input.rationale}\n\n` +
-      `${proposalMarker(input.proposalId)}\n`;
-    const content = patchFrontmatter(body, {
-      type: "decision",
-      created_by: "exo",
-      created: date,
-      tags: ["type/decision"],
-    });
+    const content = formatDecision({ ...input, date, marker: proposalMarker(input.proposalId) });
 
     await this.vault.ensureFolder(path);
     // `create` is the final collision guard. A race rejects here rather than

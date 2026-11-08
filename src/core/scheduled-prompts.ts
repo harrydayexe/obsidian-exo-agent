@@ -4,7 +4,7 @@
  * (apps/server/src/mcp/toolkits/orchestrator): a run lands in the chat that
  * scheduled it by default, or in a fresh chat each time.
  *
- * Exo already has Automations (`_system/automations/*.md`), which run a
+ * Exo already has Automations (`<system>/automations/*.md`), which run a
  * playbook outside any chat. This is the other half: a message that arrives in
  * a conversation later, so the agent picks the thread back up where it was.
  *

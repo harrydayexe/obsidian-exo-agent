@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   ledgerFileName,
+  ledgerHeader,
+  lineReceipts,
+  receiptPath,
+  runHeader,
   agentRunId,
   serializeAgentRun,
   parseAgentLedger,
@@ -16,7 +20,7 @@ import {
 const iso = (s: string) => Date.parse(s);
 
 const record = (over: Partial<AgentRunRecord> = {}): AgentRunRecord => ({
-  id: "2026-08-01T09:00:00.000Z·ghostwriter",
+  id: "2026-08-01T09:00:00Z ghostwriter work",
   slug: "ghostwriter",
   name: "Ghostwriter",
   startedAt: iso("2026-08-01T09:00:00.000Z"),
@@ -25,8 +29,9 @@ const record = (over: Partial<AgentRunRecord> = {}): AgentRunRecord => ({
   trigger: "daily 08:00",
   tier: "act",
   report: "_system/reports/run.md",
-  writes: ["Posts/a.md", "Posts/b.md"],
+  writes: ["Posts/a.md | (new file) | # First post", "Posts/b.md | old line | new line"],
   by: "exo",
+  summary: "Drafted two posts.",
   ...over,
 });
 
@@ -40,6 +45,74 @@ describe("ledgerFileName", () => {
 describe("agentRunId", () => {
   it("is sortable and carries the agent", () => {
     expect(agentRunId("gw", iso("2026-08-01T09:00:00Z"))).toBe("2026-08-01T09:00:00.000Z·gw");
+  });
+});
+
+describe("the kit run record", () => {
+  it("is a `## <time> <agent> work` block with the spec fields and one write line per receipt", () => {
+    const out = serializeAgentRun(record());
+    expect(out).toContain("\n## 2026-08-01T09:00:00Z ghostwriter work\n");
+    expect(out).toContain("- agent: ghostwriter\n");
+    expect(out).toContain("- outcome: ok\n");
+    expect(out).toContain("- summary: Drafted two posts.\n");
+    expect(out).toContain("- write: Posts/a.md | (new file) | # First post\n");
+    expect(out).toContain("- write: Posts/b.md | old line | new line\n");
+  });
+
+  it("is read by the kit's own parser", async () => {
+    const { parseRuns } = await import("../src/vendor/cyber-brain/core.mjs");
+    const [run] = parseRuns(`${ledgerHeader(iso("2026-08-01T00:00:00Z"))}${serializeAgentRun(record())}`);
+    expect(run.header).toBe("2026-08-01T09:00:00Z ghostwriter work");
+    expect(run.fields.agent).toBe("ghostwriter");
+    expect(run.fields.by).toBe("schedule");
+    expect(run.writes).toHaveLength(2);
+    for (const w of run.writes) expect(w.split(" | ")).toHaveLength(3);
+  });
+
+  it("writes the kit's `by`: user for a manual run, schedule for a trigger, the agent for a delegation", () => {
+    expect(serializeAgentRun(record({ trigger: "manual" }))).toContain("- by: user\n");
+    expect(serializeAgentRun(record())).toContain("- by: schedule\n");
+    expect(serializeAgentRun(record({ by: "research" }))).toContain("- by: research\n");
+  });
+
+  it("always carries a summary within the kit's limit", () => {
+    const none = serializeAgentRun(record({ summary: undefined }));
+    expect(none).toContain("- summary: Ghostwriter ran (daily 08:00)\n");
+    const long = serializeAgentRun(record({ summary: "x".repeat(400) }));
+    const line = long.split("\n").find((l) => l.startsWith("- summary:"))!;
+    expect(line.length - "- summary: ".length).toBeLessThanOrEqual(180);
+  });
+
+  it("starts a month file with a description, like the kit", () => {
+    expect(ledgerHeader(iso("2026-08-01T00:00:00Z"))).toMatch(/^---\ndescription: Run log for 2026-08/);
+    expect(runHeader("gw", iso("2026-08-01T09:00:00.456Z"))).toBe("2026-08-01T09:00:00Z gw work");
+  });
+});
+
+describe("lineReceipts", () => {
+  it("logs one receipt per changed line with the exact before and after", () => {
+    expect(lineReceipts("N.md", "a\nold\nc\n", "a\nnew\nc\n")).toEqual(["N.md | old | new"]);
+  });
+  it("logs an added line as (none) -> line and a removed line as line -> (none)", () => {
+    expect(lineReceipts("N.md", "a\nc\n", "a\nb\nc\n")).toEqual(["N.md | (none) | b"]);
+    expect(lineReceipts("N.md", "a\nb\nc\n", "a\nc\n")).toEqual(["N.md | b | (none)"]);
+  });
+  it("logs a new file as (new file) with its first line, and never logs blank lines", () => {
+    expect(lineReceipts("N.md", null, "\n# Title\nbody\n")).toEqual(["N.md | (new file) | # Title"]);
+    expect(lineReceipts("N.md", "a\n", "a\n\n\n")).toEqual(["N.md | (none) | (none)"]);
+  });
+  it("keeps a table row's pipes from breaking the three-field shape", () => {
+    const [r] = lineReceipts("N.md", "| a | b |\n", "| a | c |\n");
+    expect(r.split(" | ")).toHaveLength(3);
+  });
+  it("caps a rewrite at a bounded number of receipts", () => {
+    const many = Array.from({ length: 100 }, (_, i) => `line ${i}`).join("\n");
+    const out = lineReceipts("N.md", many, many.replace(/line/g, "row"));
+    expect(out.length).toBeLessThanOrEqual(41);
+    expect(out.at(-1)).toContain("more changed lines");
+  });
+  it("names the file a receipt belongs to", () => {
+    expect(receiptPath("Posts/a.md | old | new")).toBe("Posts/a.md");
   });
 });
 
@@ -74,7 +147,7 @@ describe("serialize → parse round trip", () => {
     expect(parseAgentLedger(out)[0].restoreId).toBeUndefined();
   });
 
-  it("stays readable by an older parser (unknown key is just skipped)", () => {
+  it("stays readable without the restore key (it is additive)", () => {
     // The field is additive: a ledger written with it must still parse if the
     // key is dropped, and vice versa.
     const withId = serializeAgentRun(record({ restoreId: "x-1" }));
@@ -96,7 +169,7 @@ describe("serialize → parse round trip", () => {
 
   it("appends cleanly — two serialized records concatenate into two parsed ones", () => {
     const a = serializeAgentRun(record());
-    const b = serializeAgentRun(record({ id: "2026-08-01T10:00:00.000Z·crm", slug: "crm", startedAt: iso("2026-08-01T10:00:00Z") }));
+    const b = serializeAgentRun(record({ slug: "crm", startedAt: iso("2026-08-01T10:00:00Z") }));
     expect(parseAgentLedger(a + b)).toHaveLength(2);
   });
 });
@@ -108,18 +181,18 @@ describe("parseAgentLedger — resilience", () => {
   });
 
   it("skips blocks missing the required fields instead of throwing", () => {
-    const raw = ["## broken", "- name: X", "", serializeAgentRun(record())].join("\n");
+    const raw = ["## 2026-08-01T08:00:00Z nobody work", "- name: X", "", serializeAgentRun(record())].join("\n");
     const parsed = parseAgentLedger(raw);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].slug).toBe("ghostwriter");
   });
 
   it("skips a block with an unparseable timestamp", () => {
-    expect(parseAgentLedger(["## x", "- agent: a", "- started: not-a-date", ""].join("\n"))).toEqual([]);
+    expect(parseAgentLedger(["## 2026-08-01T09:00:00Z a work", "- agent: a", "- started: not-a-date", ""].join("\n"))).toEqual([]);
   });
 
   it("defaults an unknown outcome to failed rather than trusting it", () => {
-    const raw = ["## x", "- agent: a", "- started: 2026-08-01T09:00:00.000Z", "- outcome: wonderful", ""].join("\n");
+    const raw = ["## 2026-08-01T09:00:00Z a work", "- agent: a", "- outcome: wonderful", ""].join("\n");
     expect(parseAgentLedger(raw)[0].outcome).toBe("failed");
   });
 

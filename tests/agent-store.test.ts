@@ -280,3 +280,54 @@ describe("AgentStore writes", () => {
     expect(vault.files["_system/agents/nope.md"]).toBeUndefined();
   });
 });
+
+describe("AgentStore run log (cyber-brain run record)", () => {
+  const started = Date.UTC(2026, 10, 7, 15, 20, 11);
+  const run = {
+    id: "ignored",
+    slug: "ghostwriter",
+    name: "Ghostwriter",
+    startedAt: started,
+    durationMs: 3000,
+    outcome: "ok" as const,
+    trigger: "manual",
+    tier: "act",
+    writes: ["Posts/a.md | old | new"],
+    by: "exo",
+    summary: "Drafted a post.",
+  };
+
+  it("appends to System-style <root>/runs/YYYY-MM.md, creating the month with a description", async () => {
+    const { store, vault } = makeStore({}, []);
+    await store.appendRun(run);
+    await store.appendRun({ ...run, startedAt: started + 60_000, writes: [] });
+    const text = vault.files["_system/runs/2026-11.md"];
+    expect(text).toMatch(/^---\ndescription: Run log for 2026-11/);
+    expect(text.match(/^## /gm)).toHaveLength(2);
+    expect(text).toContain("## 2026-11-07T15:20:11Z ghostwriter work");
+    expect(text).toContain("- write: Posts/a.md | old | new");
+    expect((await store.readRuns(started)).map((r) => r.slug)).toEqual(["ghostwriter", "ghostwriter"]);
+  });
+
+  it("turns a run's checkpoint into one receipt per changed line, from the file as it is now", async () => {
+    const { store } = makeStore({ "Posts/a.md": "keep\nnew line\n", "Posts/b.md": "# Fresh\nbody\n" }, []);
+    const receipts = await store.receipts({
+      writes: ["Posts/a.md", "Posts/b.md", "Posts/c.md"],
+      checkpoint: new Map<string, string | null>([
+        ["Posts/a.md", "keep\nold line\n"],
+        ["Posts/b.md", null],
+      ]),
+    });
+    expect(receipts).toEqual([
+      "Posts/a.md | old line | new line",
+      "Posts/b.md | (new file) | # Fresh",
+      "Posts/c.md | (none) | (none)", // no snapshot: the path is still named
+    ]);
+  });
+
+  it("journals under the heading the vault's AGENTS.md names", async () => {
+    const { store, vault } = makeStore({ "Daily/2026-11-07.md": "# Day\n" }, []);
+    expect(await store.appendJournal("Daily/2026-11-07.md", "- 15:20 **Ghostwriter** Drafted a post.", "### Run log")).toBe(true);
+    expect(vault.files["Daily/2026-11-07.md"]).toBe("# Day\n\n### Run log\n\n- 15:20 **Ghostwriter** Drafted a post.\n");
+  });
+});

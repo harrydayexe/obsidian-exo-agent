@@ -3,6 +3,7 @@
  * format with a provenance line back to the chat and an Obsidian block anchor,
  * planned as an exact insertion so the receipt can undo it. No Obsidian import.
  */
+import { formatFact, type FactMeta } from "../vendor/cyber-brain/core.mjs";
 import { chatLink } from "./chat-link";
 import { documentNewline } from "./frontmatter-patch";
 import { oneLine, safeTitle } from "./text-safety";
@@ -53,30 +54,32 @@ export function newAnchor(rand: () => number, content = ""): string {
 /** Where a fact came from: the chat with its link, or the automation by name
  *  for a headless run (`convoId` empty). */
 function sourceOf(p: Provenance): string {
-  const title = safeTitle(p.chatTitle).replace(/"/g, "'");
-  return p.convoId ? `chat "${title}" (${chatLink(p.convoId, p.msgIndex)})` : `automazione "${title}"`;
+  // The source sits inside a fact tail: `;` separates keys and `]` ends it.
+  const title = safeTitle(p.chatTitle).replace(/"/g, "'").replace(/[;[\]]/g, " ").replace(/\s+/g, " ").trim();
+  return p.convoId ? `chat "${title}" (${chatLink(p.convoId, p.msgIndex)})` : `automation "${title}"`;
 }
 
-/** `[fonte: <source>; dal: <date>]`. A headless run has no chat to link back
- *  to: the line names the automation or playbook instead. */
+/** The kit fact keys for a write: `source` and `since` (spec 4.1). */
+export function provenanceMeta(p: Provenance): FactMeta {
+  return { source: sourceOf(p), since: p.date };
+}
+
+/** The bracketed tail of a fact line, `[source: <source>; since: <date>]`. A
+ *  headless run has no chat to link back to: the tail names the automation or
+ *  playbook instead. */
 export function formatProvenance(p: Provenance): string {
-  return `[fonte: ${sourceOf(p)}; dal: ${p.date}]`;
-}
-
-/** `[fonte: <source>]` for a line that already carries its date, such as a
- *  changed fact `(dal <date>; prima <old>)`. */
-export function formatSource(p: Provenance): string {
-  return `[fonte: ${sourceOf(p)}]`;
+  return formatFact("x", provenanceMeta(p)).replace(/^- x /, "");
 }
 
 /** One line into a list section becomes one vault fact line; anything else
  *  is the passage verbatim followed by one provenance line. The anchor ends
  *  the last line either way. */
 export function formatSaveBlock(text: string, p: Provenance, anchor: string, sectionIsList: boolean): SaveBlock {
-  const tail = `${formatProvenance(p)} ^${anchor}`;
   const lines = text.replace(/\r\n?/g, "\n").replace(/^\s*\n/, "").replace(/\s+$/, "").split("\n");
-  if (sectionIsList && lines.length === 1) return { anchor, shape: "fact", lines: [`- ${oneLine(lines[0])} ${tail}`] };
-  return { anchor, shape: "passage", lines: [...lines, tail] };
+  if (sectionIsList && lines.length === 1) {
+    return { anchor, shape: "fact", lines: [`${formatFact(oneLine(lines[0]), provenanceMeta(p))} ^${anchor}`] };
+  }
+  return { anchor, shape: "passage", lines: [...lines, `${formatProvenance(p)} ^${anchor}`] };
 }
 
 const plain = (l: string | undefined): string => (l ?? "").replace(/\r$/, "");

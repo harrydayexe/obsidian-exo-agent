@@ -17,7 +17,8 @@
 		"eval:harvest": "node scripts/eval-harvest.mjs",
 		"eval:grounding": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/eval-grounding.mjs",
 		"smoke": "node scripts/smoke.mjs",
-		"bump": "node scripts/bump.mjs"
+		"bump": "node scripts/bump.mjs",
+		"sync:cyber-brain": "node scripts/sync-cyber-brain.mjs"
 	},
 	"keywords": [
 		"obsidian",

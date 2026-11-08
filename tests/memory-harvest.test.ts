@@ -5,7 +5,9 @@ import {
   checkTarget,
   explicitRulePaths,
   buildDecidePrompt,
-  inboxNote,
+  appendTransit,
+  transitEntry,
+  transitNote,
   stripProvenance,
   harvestCommitMessage,
   harvestBlocklist,
@@ -25,6 +27,7 @@ import {
 import { containsSecret, safeTitle } from "../src/core/text-safety";
 import { formatProvenance } from "../src/core/block-patch";
 import { formatSupersede } from "../src/core/supersede";
+import { parseFact, parseTransit } from "../src/vendor/cyber-brain/core.mjs";
 import type { ChatMessage } from "../src/core/recent-chats";
 import { exoPaths } from "../src/core/paths";
 import { makeExclusion } from "../src/core/vault-exclusions";
@@ -148,6 +151,10 @@ describe("memoryRulesSection + explicitRulePaths", () => {
     expect(rules).toContain("### Chi scrive");
     expect(rules).not.toContain("## Mappa");
   });
+  it("finds the kit's `## Where things go` router too", () => {
+    const kit = "# AGENTS.md\n## Boot\nread\n## Where things go\n| a | `System/memory/loops.md` |\n## Hard rules\nx";
+    expect(memoryRulesSection(kit)).toBe("## Where things go\n| a | `System/memory/loops.md` |");
+  });
   it("finds `## Memory` too, and nothing when absent", () => {
     expect(memoryRulesSection("## Memory\nrules")).toBe("## Memory\nrules");
     expect(memoryRulesSection("# Nothing here")).toBe("");
@@ -180,14 +187,15 @@ describe("checkTarget guardrails", () => {
   const P = exoPaths("_system");
   const existing = new Set([
     "CRM/People/Anna.md",
-    "_system/agent/USER.md",
+    "_system/identity/USER.md",
+    "_system/identity/observations.md",
+    "_system/runs/2026-09.md",
     "Input/Readwise/Book.md",
     "AGENTS.md",
     "Active/Projects/Exo/AGENTS.md",
     "Knowledge/Identity/mario-mental-model.md",
-    "_system/memory/open-loops.md",
+    "_system/memory/loops.md",
     "_system/memory/agents/exo.md",
-    "_system/vault-context.md",
     "_system/memory/rules/_index.md",
     "_system/memory/decisions/2026-09-25-x.md",
     "_system/automations/digest.md",
@@ -199,33 +207,34 @@ describe("checkTarget guardrails", () => {
   ]);
   const env: TargetEnv = {
     exists: (p) => existing.has(p),
-    inboxPath: "_system/memory/inbox/2026-09-25.md",
+    inboxPath: "_system/memory/inbox/exo/2026-09-25.md",
     blocked: harvestBlocklist(P),
     excluded: makeExclusion(["Private/", "/^Journal\\/\\d{4}\\//"], ["Input/"]),
   };
-  it("accepts user notes, the mental model, open loops, agent memory and today's inbox", () => {
+  it("accepts user notes, the mental model, the loops file, observations, agent memory and today's transit file", () => {
     for (const p of [
       "CRM/People/Anna.md",
       "/CRM/People/Anna.md",
       "Knowledge/Identity/mario-mental-model.md",
-      "_system/memory/open-loops.md",
+      "_system/memory/loops.md",
+      "_system/identity/observations.md",
       "_system/memory/agents/exo.md",
-      "_system/memory/inbox/2026-09-25.md",
+      "_system/memory/inbox/exo/2026-09-25.md",
     ]) {
       expect(checkTarget(p, env), p).toBeNull();
     }
   });
   it("rejects notes that do not exist (no note creation besides the inbox)", () => {
     expect(checkTarget("CRM/People/Nobody.md", env)).toBe("note does not exist");
-    expect(checkTarget("_system/memory/inbox/2026-09-24.md", env)).toBe("note does not exist");
+    expect(checkTarget("_system/memory/inbox/exo/2026-09-24.md", env)).toBe("note does not exist");
   });
   it("rejects kernel and Exo mechanism files, and ANY AGENTS.md / CLAUDE.md", () => {
     for (const p of [
-      "_system/agent/USER.md",
+      "_system/identity/USER.md",
+      "_system/runs/2026-09.md",
       "AGENTS.md",
       "Active/Projects/Exo/AGENTS.md",
       "Some/Where/CLAUDE.md",
-      "_system/vault-context.md",
       "_system/memory/rules/_index.md",
       "_system/memory/decisions/2026-09-25-x.md",
       "_system/automations/digest.md",
@@ -245,9 +254,9 @@ describe("checkTarget guardrails", () => {
     expect(checkTarget("Private/diary.md", env)).toBe("ignored folder");
     expect(checkTarget("Journal/2026/secret.md", env)).toBe("ignored folder");
   });
-  it("allows the inbox even under a dot-folder memory root", () => {
-    const dotEnv = { ...env, inboxPath: ".exo/memory/inbox/2026-09-25.md" };
-    expect(checkTarget(".exo/memory/inbox/2026-09-25.md", dotEnv)).toBeNull();
+  it("allows the transit file even under a dot-folder memory root", () => {
+    const dotEnv = { ...env, inboxPath: ".exo/memory/inbox/exo/2026-09-25.md" };
+    expect(checkTarget(".exo/memory/inbox/exo/2026-09-25.md", dotEnv)).toBeNull();
     expect(checkTarget(".exo/memory/other.md", dotEnv)).toBe("hidden or config folder");
   });
   it("rejects non-markdown and path tricks", () => {
@@ -267,14 +276,20 @@ describe("applyAdd", () => {
       line: `- Leads design at Acme${TAIL}`,
     });
   });
-  it("the tail names the chat, links back to it and carries the date", () => {
+  it("the tail names the chat, links back to it and carries the date, in the kit's grammar", () => {
     const line = applyAdd(note, "Work", "x fact", PROV)?.line ?? "";
-    expect(line).toBe('- x fact [fonte: chat "Planning" (obsidian://exo-chat?id=c-1&msg=0); dal: 2026-10-25]');
+    expect(line).toBe('- x fact [source: chat "Planning" (obsidian://exo-chat?id=c-1&msg=0); since: 2026-10-25]');
+    const fact = parseFact(line);
+    expect(fact?.error).toBeNull();
+    expect(fact?.meta.since).toBe("2026-10-25");
   });
-  it("does not duplicate a provenance the model wrote itself", () => {
-    const line = applyAdd(note, "Work", 'Leads design [fonte: chat "Old" (obsidian://exo-chat?id=zzz&msg=3); dal: 2026-01-01]', PROV)?.line;
-    expect(line).toBe(`- Leads design${TAIL}`);
-    expect(line?.match(/\[fonte/g)).toHaveLength(1);
+  it("does not duplicate a provenance the model wrote itself, in either grammar", () => {
+    const old = applyAdd(note, "Work", 'Leads design [fonte: chat "Old" (obsidian://exo-chat?id=zzz&msg=3); dal: 2026-01-01]', PROV)?.line;
+    const kit = applyAdd(note, "Work", 'Leads design [source: chat "Old" (obsidian://exo-chat?id=zzz&msg=3); since: 2026-01-01]', PROV)?.line;
+    for (const line of [old, kit]) {
+      expect(line).toBe(`- Leads design${TAIL}`);
+      expect(line?.match(/\[(source|fonte)/g)).toHaveLength(1);
+    }
   });
   it("strips a model-written changed-fact tail on an add too", () => {
     expect(applyAdd(note, "Work", "Leads design (dal 2026-09-01; prima Designer)", PROV)?.line).toBe(`- Leads design${TAIL}`);
@@ -289,8 +304,24 @@ describe("applyAdd", () => {
   it("writes exactly one line, never a second bullet marker", () => {
     expect(applyAdd("", undefined, "- multi\nline", PROV)?.content).toBe(`- multi line${TAIL}\n`);
   });
-  it("the inbox note gets provenance too", () => {
-    expect(applyAdd(inboxNote("2026-10-25"), undefined, "Something useful", PROV)?.line).toBe(`- Something useful${TAIL}`);
+  it("a transit entry names the note, or ? for a fact with no home, in the kit's transit grammar", () => {
+    const home = transitEntry("Leads design", "CRM/Anna.md", PROV);
+    const nowhere = transitEntry("Something useful", undefined, PROV);
+    expect(home).toBe(`- [fact] Leads design -> CRM/Anna.md${TAIL}`);
+    expect(nowhere).toBe(`- [fact] Something useful -> ?${TAIL}`);
+    expect(parseTransit(home)).toMatchObject({ kind: "fact", target: "CRM/Anna.md", text: "Leads design" });
+    expect(parseTransit(nowhere)?.meta.since).toBe("2026-10-25");
+  });
+  it("a transit entry that replaces a line carries its text as was", () => {
+    const e = transitEntry("Team: 6", "CRM/Anna.md", PROV, "Team: 4");
+    expect(parseTransit(e)?.meta.was).toBe("Team: 4");
+    expect(transitEntry("Team: 6; or 7", "CRM/Anna.md", PROV, "a [b]; c")).toContain("was: a (b), c]");
+  });
+  it("the transit file starts with a heading and takes one line per entry", () => {
+    expect(transitNote("2026-10-25")).toBe("# Transit 2026-10-25\n");
+    expect(appendTransit(transitNote("2026-10-25"), "- [fact] x -> ? [source: y; since: 2026-10-25]")).toBe(
+      "# Transit 2026-10-25\n- [fact] x -> ? [source: y; since: 2026-10-25]\n",
+    );
   });
   it("never lands inside frontmatter: a YAML comment is not a section", () => {
     const fm = "---\ntags: [x]\n# Work\n---\n# Note\nbody\n";
@@ -309,12 +340,19 @@ describe("applyAdd", () => {
     for (const t of ["# Heading", "| a | b |", "```js", "---"]) expect(applyAdd(note, "Work", t, PROV), t).toBeNull();
   });
   it("refuses text that is only a provenance tail", () => {
+    expect(applyAdd(note, "Work", "[source: chat \"x\"; since: 2026-01-01]", PROV)).toBeNull();
     expect(applyAdd(note, "Work", "[fonte: chat \"x\"; dal: 2026-01-01]", PROV)).toBeNull();
   });
 });
 
 describe("stripProvenance", () => {
-  it("drops a trailing [fonte ...] tail", () => {
+  it("drops a trailing [source ...] tail, with its since, until or was keys", () => {
+    expect(stripProvenance('Fact [source: chat "T" (obsidian://exo-chat?id=a&msg=0); since: 2026-10-25]')).toBe("Fact");
+    expect(stripProvenance("Fact [source: nota; since: 2026-10-25; was: Other fact]")).toBe("Fact");
+    expect(stripProvenance("Source of truth: the vault")).toBe("Source of truth: the vault");
+    expect(stripProvenance("Serve una [source of truth]")).toBe("Serve una [source of truth]");
+  });
+  it("drops a trailing legacy [fonte ...] tail", () => {
     expect(stripProvenance('Fact [fonte: chat "T" (obsidian://exo-chat?id=a&msg=0); dal: 2026-10-25]')).toBe("Fact");
     expect(stripProvenance("Fact [fonte: nota; dal: 2026-10-25]  ")).toBe("Fact");
   });
@@ -345,51 +383,52 @@ describe("stripProvenance, bracketed fact text", () => {
 
 describe("applyUpdate", () => {
   const note = "## Work\n- Role: designer at Acme\n  - Team: 4\n";
-  const SRC = '[fonte: chat "Planning" (obsidian://exo-chat?id=c-1&msg=0)]';
+  const SOURCE = 'chat "Planning" (obsidian://exo-chat?id=c-1&msg=0)';
+  const tail = (was: string) => `[source: ${SOURCE}; since: 2026-10-25; was: ${was}]`;
   const U = (content: string, old: string, text: string) => applyUpdate(content, old, text, { ...PROV, date: "2026-10-25" });
-  it("replaces exactly one line, keeping its bullet: (dal <today>; prima <old>) then the chat source", () => {
+  it("replaces exactly one line, keeping its bullet: the new value, the chat source, since today, was the old value", () => {
     expect(U(note, "- Role: designer at Acme", "Role: head of design at Acme")).toEqual({
-      content: `## Work\n- Role: head of design at Acme (dal 2026-10-25; prima Role: designer at Acme) ${SRC}\n  - Team: 4\n`,
+      content: `## Work\n- Role: head of design at Acme ${tail("Role: designer at Acme")}\n  - Team: 4\n`,
       from: "- Role: designer at Acme",
-      to: `- Role: head of design at Acme (dal 2026-10-25; prima Role: designer at Acme) ${SRC}`,
+      to: `- Role: head of design at Acme ${tail("Role: designer at Acme")}`,
     });
   });
-  it("the changed-fact part is the one corrections write", () => {
-    const res = U(note, "- Role: designer at Acme", "Role: head");
-    expect(res?.to).toBe(`${formatSupersede("- Role: designer at Acme", "Role: head", "2026-10-25")} ${SRC}`);
+  it("the written line is a valid kit fact", () => {
+    const fact = parseFact(U(note, "- Role: designer at Acme", "Role: head")!.to);
+    expect(fact?.error).toBeNull();
+    expect(fact?.meta).toMatchObject({ since: "2026-10-25", was: "Role: designer at Acme" });
   });
-  it("the source carries no second dal:, the date is in the parenthesis", () => {
-    expect(U(note, "- Team: 4", "Team: 6")?.to).not.toMatch(/dal:/);
+  it("is the line corrections write", () => {
+    const res = U(note, "- Role: designer at Acme", "Role: head");
+    expect(res?.to).toBe(formatSupersede("- Role: designer at Acme", "Role: head", "2026-10-25", SOURCE));
   });
   it("keeps nested indentation", () => {
-    expect(U(note, "- Team: 4", "Team: 6")?.content).toContain(`\n  - Team: 6 (dal 2026-10-25; prima Team: 4) ${SRC}\n`);
+    expect(U(note, "- Team: 4", "Team: 6")?.content).toContain(`\n  - Team: 6 ${tail("Team: 4")}\n`);
   });
   it("does not duplicate a tail the model wrote itself", () => {
-    const res = U(note, "- Team: 4", 'Team: 6 (dal 2026-01-01; prima 4) [fonte: x; dal: 2026-01-01]');
-    expect(res?.to).toBe(`  - Team: 6 (dal 2026-10-25; prima Team: 4) ${SRC}`);
+    const res = U(note, "- Team: 4", "Team: 6 (dal 2026-01-01; prima 4) [fonte: x; dal: 2026-01-01]");
+    expect(res?.to).toBe(`  - Team: 6 ${tail("Team: 4")}`);
+    const kit = U(note, "- Team: 4", "Team: 6 [source: x; since: 2026-01-01; was: 4]");
+    expect(kit?.to).toBe(`  - Team: 6 ${tail("Team: 4")}`);
   });
-  it("an old line that already holds a (dal; prima) tail nests nothing", () => {
-    const doc = "- Team: 4 (dal 2026-01-01; prima 2)\n";
-    expect(U(doc, "- Team: 4 (dal 2026-01-01; prima 2)", "Team: 6")?.to).toBe(`- Team: 6 (dal 2026-10-25; prima Team: 4) ${SRC}`);
+  it("an old fact line gives its text, not its tail, as was", () => {
+    const doc = "- Team: 4 [source: nota; since: 2026-01-01]\n";
+    expect(U(doc, "- Team: 4 [source: nota; since: 2026-01-01]", "Team: 6")?.to).toBe(`- Team: 6 ${tail("Team: 4")}`);
   });
-  it("keeps the old line's source inside prima", () => {
-    const doc = "- Team: 4 [fonte: nota; dal: 2026-01-01]\n";
-    expect(U(doc, "- Team: 4 [fonte: nota; dal: 2026-01-01]", "Team: 6")?.to).toBe(
-      `- Team: 6 (dal 2026-10-25; prima Team: 4 [fonte: nota; dal: 2026-01-01]) ${SRC}`,
-    );
-  });
-  it("an old line with both tails drops only the changed-fact tail and keeps its source", () => {
+  it("an old line in the legacy tail format becomes plain text in was, still parseable", () => {
     const old = "- Team: 4 (dal 2026-01-01; prima 2) [fonte: nota B]";
-    expect(U(`${old}\n`, old, "Team: 6")?.to).toBe(`- Team: 6 (dal 2026-10-25; prima Team: 4 [fonte: nota B]) ${SRC}`);
+    const to = U(`${old}\n`, old, "Team: 6")!.to;
+    expect(parseFact(to)?.error).toBeNull();
+    expect(parseFact(to)?.meta.was).toBe("Team: 4 (dal 2026-01-01, prima 2) (fonte: nota B)");
   });
   it("takes a trailing block anchor off the old line and puts it back at the end of the new one", () => {
-    const old = "- Team: 4 [fonte: nota; dal: 2026-01-01] ^exo-abc123";
+    const old = "- Team: 4 [source: nota; since: 2026-01-01] ^exo-abc123";
     const res = U(`${old}\n`, old, "Team: 6");
-    expect(res?.to).toBe(`- Team: 6 (dal 2026-10-25; prima Team: 4 [fonte: nota; dal: 2026-01-01]) ${SRC} ^exo-abc123`);
+    expect(res?.to).toBe(`- Team: 6 ${tail("Team: 4")} ^exo-abc123`);
     expect(res?.to.match(/\^exo-abc123/g)).toHaveLength(1);
   });
   it("an anchored line with no source keeps its anchor last", () => {
-    expect(U("- Team: 4 ^exo-q1\n", "- Team: 4 ^exo-q1", "Team: 6")?.to).toBe(`- Team: 6 (dal 2026-10-25; prima Team: 4) ${SRC} ^exo-q1`);
+    expect(U("- Team: 4 ^exo-q1\n", "- Team: 4 ^exo-q1", "Team: 6")?.to).toBe(`- Team: 6 ${tail("Team: 4")} ^exo-q1`);
   });
   it("refuses a line that is missing or not unique", () => {
     expect(U(note, "- Role: CEO", "x")).toBeNull();
@@ -413,16 +452,16 @@ describe("applyUpdate", () => {
       expect(U(doc, old, "live"), old).toBeNull();
     }
     expect(U(doc, "- plain line", "## Injected heading")).toBeNull();
-    expect(U(doc, "- plain line", "new plain line")?.to).toBe(`- new plain line (dal 2026-10-25; prima plain line) ${SRC}`);
+    expect(U(doc, "- plain line", "new plain line")?.to).toBe(`- new plain line ${tail("plain line")}`);
   });
 });
 
 describe("buildDecidePrompt", () => {
   const prompt = buildDecidePrompt({
     today: "2026-10-25",
-    rules: "## Memoria\nCome si scrive: `[fonte: <chat>; dal: AAAA-MM-GG]`",
+    rules: "## Memoria\nCome si scrive: `[source: <chat>; since: AAAA-MM-GG]`",
     routingNotes: [],
-    inboxPath: "_exo/memory/inbox/2026-10-25.md",
+    inboxPath: "_exo/memory/inbox/exo/2026-10-25.md",
     agentLessonPath: "_exo/memory/agents/exo.md",
     items: [],
   });

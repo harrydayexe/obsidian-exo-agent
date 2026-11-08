@@ -70,6 +70,7 @@ function fakePlugin(kernel: boolean) {
       get: vi.fn(() => null),
       loadMemory: vi.fn(async () => ({ path: "_system/memory/agents/morning-digest.md", excerpt: "" })),
       appendRun: vi.fn(async (_record: Record<string, unknown>) => undefined),
+      receipts: vi.fn(async () => [] as string[]),
       appendJournal: vi.fn(async () => true),
     },
     proposalStore: { append: vi.fn(async (_candidate: unknown, _source: unknown) => ({ status: "appended" })) },
@@ -82,6 +83,7 @@ function fakePlugin(kernel: boolean) {
   Object.assign(plugin, {
     ...deps,
     app: {},
+    brain: { system: "System", writers: "direct", dailyNotes: "", dailyHeading: "### Agents" },
     agentRunsInFlight: new Set<string>(),
     settings: {
       provider: "claude",
@@ -195,7 +197,7 @@ describe("prompt-only automation through the agent executor", () => {
     expect(headless.prompts[0].opts.write).toBe(true);
     expect(headless.prompts[0].prompt).not.toContain(AGENT_PROPOSAL_FENCE);
     expect(headless.reports).toHaveLength(0);
-    expect(agentStore.appendJournal).toHaveBeenCalledWith("Daily/2026-09-25.md", expect.any(String));
+    expect(agentStore.appendJournal).toHaveBeenCalledWith("Daily/2026-09-25.md", expect.any(String), "### Agents");
   });
 
   it("with the kernel off: no contract in the prompt and nothing collected, even from a fenced block", async () => {

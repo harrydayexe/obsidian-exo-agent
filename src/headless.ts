@@ -8,7 +8,8 @@ import { READ_ONLY_TOOLS, toolFilePath, toolFilePaths } from "./ui/tools";
 import { isReadOnlyExternalTool } from "./core/headless-tools";
 import { rememberMcpServers, toolInMcpScope } from "./core/mcp-scope";
 import { WRITE_TOOLS } from "./core/touched";
-import { exoPaths, LEGACY_MEMORY_ROOT } from "./core/paths";
+import { exoPaths, DEFAULT_MEMORY_ROOT } from "./core/paths";
+import { loadBrainConfig } from "./obsidian/brain-config";
 import { memoryCaps } from "./core/memory-caps";
 import { effortFor } from "./core/model-tuning";
 import { toVaultRelative } from "./core/vault-path";
@@ -113,9 +114,10 @@ export async function runHeadlessPlaybook(
   // One tool configuration for both engines. The headless surface never writes
   // memory, even in write mode: automations edit notes, they don't get to
   // rewrite Exo's memory (memoryCaps owns that rule).
+  const brain = await loadBrainConfig(app);
   const toolOpts: ObsidianToolOpts = {
     memory: memoryCaps(settings, { surface: "headless" }),
-    paths: exoPaths(settings.memoryRoot || LEGACY_MEMORY_ROOT),
+    paths: exoPaths(brain.system),
     agentCaller: opts.agentCaller,
     runName: opts.runName,
   };
@@ -261,7 +263,7 @@ export async function writeReport(
   app: App,
   name: string,
   result: HeadlessResult,
-  reportsDir: string = exoPaths(LEGACY_MEMORY_ROOT).reports
+  reportsDir: string = exoPaths(DEFAULT_MEMORY_ROOT).reports
 ): Promise<string> {
   const dir = reportsDir;
   if (!app.vault.getAbstractFileByPath(dir)) {

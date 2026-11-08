@@ -170,7 +170,7 @@ claude.ai connectors expose tools under a *sanitized raw* server name
 
 An agent is two files with two owners: the **brain** (`.claude/agents/<slug>.md`
 — CLI-native, portable across Claude Code / Cowork / Codex, never written by
-Exo) and the **contract** (`<memoryRoot>/agents/<slug>.md` — triggers, autonomy
+Exo) and the **contract** (`<system>/agents/<slug>.md`, triggers, autonomy
 tier, scope globs, `can_call`). The split is forced by fact: `.claude/` is
 gitignored and does not sync to mobile, so trigger config kept there would be
 neither versioned nor visible on a phone.

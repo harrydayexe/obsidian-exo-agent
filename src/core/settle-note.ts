@@ -218,10 +218,9 @@ export function distillConversation(src: SettleSource, recap: Recap): SettleNote
 /**
  * WHERE SETTLED CHATS GO — one documented choice, resolved through the path
  * helpers rather than hard-coded: `chats/` directly under Exo's root (the
- * `memoryRoot` setting, `exoPaths().root`), beside `reports/` and `agents/`
- * because it is the same kind of thing — output Exo produced that the vault now
- * owns. It moves with the setting for free, so a vault on `_system/` and a
- * fresh one on `_exo/` both get it in the right place without a second setting.
+ * system folder from AGENTS.md, `exoPaths().root`), beside `reports/` and
+ * `agents/` because it is the same kind of thing: output Exo produced that the
+ * vault now owns. It moves with the system folder for free.
  */
 export function settleFolder(paths: ExoPaths): string {
   return paths.chats;

@@ -5,16 +5,17 @@
  * (step 2, Mem0-style), and applies the result under code-enforced guardrails.
  *
  * The one storage principle: the vault is the memory. Every write lands in an
- * existing Markdown note the user owns, or in the daily inbox note. Routing is
+ * existing Markdown note the user owns, or in Exo's transit file. Routing is
  * data: the vault's own memory rules (AGENTS.md) plus search hits reach the
  * model; the code only enforces generic guardrails. No Obsidian import.
  */
-import { formatProvenance, formatSource } from "./block-patch";
+import { formatFact, formatTransit } from "../vendor/cyber-brain/core.mjs";
+import { provenanceMeta } from "./block-patch";
 import { chatLines, type ChatLine, type ChatMessage } from "./recent-chats";
 import type { ExoPaths } from "./paths";
-import { containsSecret, oneLine } from "./text-safety";
+import { containsSecret, factSafe, oneLine } from "./text-safety";
 import { headingsOf, inFence, protectedLines } from "./save-target";
-import { formatSupersede, withoutListMarker } from "./supersede";
+import { formatSupersede } from "./supersede";
 
 /* ------------------------------ scheduling ------------------------------ */
 
@@ -168,10 +169,11 @@ export type Decision =
   | { op: "update"; candidate: number; path: string; oldLine: string; newText: string };
 
 /** The memory section of the vault's AGENTS.md: a `## Memory`/`## Memoria`
- *  heading (any level) up to the next heading of the same or higher level. */
+ *  heading (or the kit's `## Where things go`, any level) up to the next heading
+ *  of the same or higher level. */
 export function memoryRulesSection(agentsMd: string): string {
   const lines = agentsMd.split("\n");
-  const start = lines.findIndex((l) => /^#{1,6}\s+(memory|memoria)\b/i.test(l.trim()));
+  const start = lines.findIndex((l) => /^#{1,6}\s+(memory|memoria|where things go)\b/i.test(l.trim()));
   if (start < 0) return "";
   const level = (lines[start].match(/^#+/) ?? ["##"])[0].length;
   let end = lines.length;
@@ -239,7 +241,7 @@ const DEFAULT_RULES = [
   "- person or company → that entity's existing note",
   "- project → the project's existing overview/context note",
   "- agent lesson → the agent memory note",
-  "- no obvious home → the inbox note",
+  "- no obvious home → the transit file",
 ].join("\n");
 
 export function buildDecidePrompt(input: {
@@ -273,11 +275,11 @@ export function buildDecidePrompt(input: {
     '- {"op":"update","candidate":i,"path":"...","oldLine":"...","newText":"..."}: the fact CHANGED a line that exists. oldLine must be copied EXACTLY from a "line:" shown below. newText is the new value of that one line.',
     "",
     "Rules:",
-    "- Only paths shown below as NOTE, or the inbox. Never invent a path, never create notes.",
-    `- Agent lessons go to ${input.agentLessonPath} when that note is shown; anything useful with no obvious home goes to the inbox: ${input.inboxPath}.`,
+    "- Only paths shown below as NOTE, or the transit file. Never invent a path, never create notes.",
+    `- Agent lessons go to ${input.agentLessonPath} when that note is shown; anything useful with no obvious home goes to the transit file: ${input.inboxPath}.`,
     "- Additive only: never remove or rewrite the owner's text beyond the single updated line.",
     "- Write text and newText in the language of the target note, one line, no leading bullet.",
-    "- Write the bare fact only. Do not write a source, a date or the previous value: the code appends the source line and keeps the old value as a trace.",
+    "- Write the bare fact only. Do not write a source, a date or the previous value: the code adds `[source: ...; since: ...]` and keeps the old value as `was:`.",
     "- Never write credentials, keys, tokens or passwords.",
     "",
     "VAULT MEMORY RULES:",
@@ -336,10 +338,10 @@ export interface TargetEnv {
  * Notes memory harvest must never write: every AGENTS.md / CLAUDE.md, the agent
  * kernel folder (SOUL/USER/NOW stay governed by `rethink_memory`), and Exo's
  * mechanism files: vault-context, rules, decisions (the user's own records),
- * automations, agent contracts, reports, settled chats, the queue, review and
- * mentions. What stays writable: the user's own
- * notes, preferences and mental model, the open-loops ledger, per-agent
- * memory (`memory/agents/`) and the inbox.
+ * automations, agent contracts, the run log, reports, settled chats, the
+ * queue, review and mentions. What stays writable: the user's own notes, the
+ * observations note, the loops file, per-agent memory (`memory/agents/`) and
+ * Exo's transit file.
  */
 export function harvestBlocklist(paths: ExoPaths): (path: string) => boolean {
   const dirs = [
@@ -348,6 +350,7 @@ export function harvestBlocklist(paths: ExoPaths): (path: string) => boolean {
     paths.decisions,
     paths.automations,
     paths.agents,
+    paths.agentRuns,
     paths.reports,
     paths.chats,
     paths.queue,
@@ -355,6 +358,8 @@ export function harvestBlocklist(paths: ExoPaths): (path: string) => boolean {
   ].map((d) => `${d.replace(/\/+$/, "")}/`);
   const files = new Set([paths.vaultContext, paths.review]);
   return (path) => {
+    // Observations are append-only facts about the user: the one identity file memory may add to.
+    if (path === paths.observations) return false;
     const base = path.split("/").pop() ?? path;
     if (base === "AGENTS.md" || base === "CLAUDE.md") return true;
     return files.has(path) || dirs.some((d) => path.startsWith(d));
@@ -388,37 +393,29 @@ export interface HarvestProvenance {
   date: string;
 }
 
-/** A trailing `[fonte ...: ...]`: not a wikilink (`[[fonte-x]]`), and it needs
- *  a colon, so `[fonte di verità]` in a fact's own text is left alone. */
-const FONTE_TAIL = /\s*(?<!\[)\[fonte\b[^\]\n]*:[^\n]*\]\s*$/;
+/** A trailing `[source: ...]` fact tail (or the legacy `[fonte ...: ...]`, which
+ *  the model may copy from older lines): not a wikilink (`[[source-x]]`), and it
+ *  needs a colon, so `[source of truth]` in a fact's own text is left alone. */
+const SOURCE_TAIL = /\s*(?<!\[)\[(?:source|fonte)\b[^\]\n]*:[^\n]*\]\s*$/;
 const CHANGED_TAIL = /\s*\((?:dal|since) \d{4}-\d{2}-\d{2}; (?:prima|previously) [^\n]*\)\s*$/;
-/** A trailing block anchor, ` ^exo-abc123`. */
-const ANCHOR_TAIL = /\s\^[\w-]+\s*$/;
 
 /** The fact without a provenance tail the model wrote itself: a trailing
- *  `[fonte ...]` and/or `(dal ...; prima ...)`, in any order. The code adds
- *  the real ones, so none must appear twice. */
+ *  `[source ...]` and/or `(since ...; previously ...)`, in any order. The code
+ *  adds the real ones, so none must appear twice. */
 export function stripProvenance(text: string): string {
   let out = text;
   for (let prev = ""; prev !== out; ) {
     prev = out;
-    out = out.replace(FONTE_TAIL, "").replace(CHANGED_TAIL, "");
+    out = out.replace(SOURCE_TAIL, "").replace(CHANGED_TAIL, "");
   }
   return out.trimEnd();
 }
 
-/** An existing line as the value an update replaces: without its block anchor
- *  and without a changed-fact tail (nothing nests), but keeping its own
- *  `[fonte ...]`, which moves inside the new `prima`. */
-function replacedValue(line: string): { value: string; anchor: string } {
-  const anchor = ANCHOR_TAIL.exec(line)?.[0] ?? "";
-  const bare = anchor ? line.slice(0, line.length - anchor.length) : line;
-  const fonte = FONTE_TAIL.exec(bare)?.[0] ?? "";
-  const head = fonte ? bare.slice(0, bare.length - fonte.length) : bare;
-  return { value: `${head.replace(CHANGED_TAIL, "").trimEnd()}${fonte.trimEnd() ? ` ${fonte.trim()}` : ""}`, anchor: anchor.trim() };
-}
+/** `source:` of a harvest write: the chat, as corrections cite it. */
+const sourceOf = (p: HarvestProvenance): string =>
+  provenanceMeta({ ...p, msgIndex: 0 }).source ?? "";
 
-/** Append `- text [fonte: ...; dal: ...]` under `section` (a heading, matched
+/** Append `- text [source: ...; since: ...]` under `section` (a heading, matched
  *  without its #s, case-insensitively, never inside frontmatter or code) or at
  *  the end of the note. Null when the text would be structure or the note's
  *  frontmatter never closes. */
@@ -430,7 +427,7 @@ export function applyAdd(
 ): { content: string; line: string } | null {
   const fact = oneLine(stripProvenance(oneLine(text)));
   if (!fact || structural(fact)) return null;
-  const line = `- ${fact} ${formatProvenance({ ...p, msgIndex: 0 })}`;
+  const line = formatFact(fact, provenanceMeta({ ...p, msgIndex: 0 }));
   const lines = content.replace(/\s+$/, "").split("\n");
   const prot = protectedLines(lines);
   const { open, frontmatterEnd, fenced } = prot;
@@ -462,11 +459,11 @@ export function applyAdd(
 }
 
 /** Replace the ONE plain content line equal (whitespace-trimmed) to `oldLine`
- *  with `<new> (dal <date>; prima <old>) [fonte: <chat>]`, keeping its
- *  indentation, bullet and trailing block anchor. The old value keeps its own
- *  source inside `prima`; a tail the model wrote is dropped, so nothing nests.
- *  Null unless the line occurs exactly once, is not frontmatter / heading /
- *  table / fence / rule, and the new text is not structure either. */
+ *  with `<new> [source: <chat>; since: <date>; was: <old>]` (spec 4.1),
+ *  keeping its indentation, bullet and trailing block anchor. A tail the model
+ *  wrote is dropped, so nothing nests. Null unless the line occurs exactly
+ *  once, is not frontmatter / heading / table / fence / rule, and the new text
+ *  is not structure either. */
 export function applyUpdate(
   content: string,
   oldLine: string,
@@ -482,17 +479,31 @@ export function applyUpdate(
   const i = hits[0];
   if (protectedLines(lines).locked[i]) return null;
   const from = lines[i];
-  const { value, anchor } = replacedValue(from);
-  const changed = formatSupersede(value, next, p.date);
-  // A plain (unbulleted) line keeps its indentation too.
-  const indent = withoutListMarker(from) === from.trim() ? (from.match(/^\s*/) ?? [""])[0] : "";
-  lines[i] = `${indent}${changed} ${formatSource({ ...p, msgIndex: 0 })}${anchor ? ` ${anchor}` : ""}`;
+  lines[i] = formatSupersede(from, next, p.date, sourceOf(p));
   return { content: lines.join("\n"), from, to: lines[i] };
 }
 
-/** Starter content for a new daily inbox note. */
-export function inboxNote(date: string): string {
-  return `---\ntype: memory\ntags:\n  - type/memory\n---\n\n# Memory inbox: ${date}\n`;
+/** One transit entry (spec 4.2) for a fact: `target` is the note it belongs to,
+ *  `?` when it has no home; `was` the text of the line it replaces. */
+export function transitEntry(text: string, target: string | undefined, p: HarvestProvenance, was?: string): string {
+  const fact = oneLine(stripProvenance(oneLine(text))).replace(/\s->\s/g, " \u2192 ");
+  return formatTransit("fact", fact, target || "?", factSafe(sourceOf(p)), p.date, was ? factSafe(was) : undefined);
+}
+
+/** Whether a decision's text is a bare fact worth a line (not structure). */
+export function isFactText(text: string): boolean {
+  const fact = oneLine(stripProvenance(oneLine(text)));
+  return !!fact && !structural(fact);
+}
+
+/** `entry` appended to a transit file as one line. */
+export function appendTransit(content: string, entry: string): string {
+  return `${content.replace(/\s+$/, "")}\n${entry}\n`;
+}
+
+/** Starter content for a new transit file (spec 4.2). */
+export function transitNote(date: string): string {
+  return `# Transit ${date}\n`;
 }
 
 /* -------------------------------- commit -------------------------------- */

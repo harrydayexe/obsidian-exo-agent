@@ -1,7 +1,7 @@
 /**
  * Automation store — the single read/write path for unified automations.
  *
- * Scans `<memoryRoot>/automations/*.md`, parses each file through the pure
+ * Scans `<system>/automations/*.md`, parses each file through the pure
  * model, and keeps an in-memory map keyed by slug. Files that fail to parse
  * are never dropped: they surface through `errors()` so the hub can render
  * them in an error state with the problem in plain words.

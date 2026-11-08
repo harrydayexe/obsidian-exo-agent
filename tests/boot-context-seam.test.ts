@@ -10,7 +10,7 @@ const P = exoPaths("_system");
 /**
  * Boot seam (design §9): with `identity` OFF, `readBootContext` output
  * is byte-identical to before the identity layer existed. With it ON but no
- * `_system/agent/` folder, the output is identical too (all blocks missing ⇒
+ * `_system/identity/` folder, the output is identical too (all blocks missing ⇒
  * empty identity section). Only a populated folder changes the preamble.
  *
  * These exercise the impure boot fn against a hand-rolled fake vault that
@@ -52,8 +52,8 @@ function makeApp(files: Record<string, FileSpec>) {
 }
 
 const BASE_FILES: Record<string, FileSpec> = {
-  "_system/vault-context.md": { content: "Vault is marioverse. Mario is a PM." },
-  "_system/memory/preferences/preferences.md": { content: "Prefers Italian for strategy." },
+  "AGENTS.md": { content: "Vault is marioverse. Mario is a PM." },
+  "_system/identity/observations.md": { content: "Prefers Italian for strategy." },
   "_system/memory/rules/rule-verify-mario-bio.md": { content: "verify bio" },
 };
 
@@ -68,9 +68,9 @@ describe("readBootContext — flag OFF byte-identity", () => {
   it("a populated agent folder is IGNORED when the flag is OFF", async () => {
     const withFolder = makeApp({
       ...BASE_FILES,
-      "_system/agent/SOUL.md": { content: "Be terse." },
-      "_system/agent/USER.md": { content: "Mario, PM." },
-      "_system/agent/NOW.md": { content: "Shipping the identity layer." },
+      "_system/identity/SOUL.md": { content: "Be terse." },
+      "_system/identity/USER.md": { content: "Mario, PM." },
+      "_system/identity/NOW.md": { content: "Shipping the identity layer." },
     });
     const withoutFolder = makeApp(BASE_FILES);
     const off = await readBootContext(withFolder, P, { identity: false });
@@ -95,9 +95,9 @@ describe("readBootContext — flag ON with a populated folder", () => {
   it("prepends the identity section BEFORE the existing sections", async () => {
     const app = makeApp({
       ...BASE_FILES,
-      "_system/agent/SOUL.md": { content: "Be terse and direct." },
-      "_system/agent/USER.md": { content: "Mario — 0-to-1 PM." },
-      "_system/agent/NOW.md": { content: "Shipping the identity layer." },
+      "_system/identity/SOUL.md": { content: "Be terse and direct." },
+      "_system/identity/USER.md": { content: "Mario, 0-to-1 PM." },
+      "_system/identity/NOW.md": { content: "Shipping the identity layer." },
     });
     const out = await readBootContext(app, P, { identity: true });
     expect(out).toContain(IDENTITY_ARBITRATION_LINE);
@@ -129,7 +129,7 @@ describe("readBootContext — open loops past a raw-char cutoff", () => {
     expect(padding.length).toBeGreaterThan(20000);
     const app = makeApp({
       ...BASE_FILES,
-      "_system/memory/open-loops.md": { content: padding + formatLoop(lateLoop) },
+      "_system/memory/loops.md": { content: padding + formatLoop(lateLoop) },
     });
     const out = await readBootContext(app, P);
     expect(out).toContain("Late loop past the old raw cap");
@@ -154,5 +154,30 @@ describe("readBootContext — rules section prefers the index", () => {
     const out = await readBootContext(app, P);
     expect(out).toContain("### Active rules");
     expect(out).toContain("- rule-verify-mario-bio");
+  });
+});
+
+describe("readBootContext — loops survive the overall boot cap", () => {
+  it("keeps open loops when vault context, observations and rules fill the budget", async () => {
+    const big = "x".repeat(4000);
+    const loop: LoopEntry = {
+      id: "loop-budget",
+      title: "Loop that must reach the model",
+      openedAt: Date.parse("2026-11-01"),
+      openedRaw: "2026-11-01",
+      status: "open",
+      note: "",
+    } as LoopEntry;
+    const app = makeApp({
+      "AGENTS.md": { content: big },
+      "_system/identity/observations.md": { content: big },
+      "_system/memory/rules/_index.md": { content: big },
+      "_system/memory/loops.md": { content: formatLoop(loop) },
+      "_system/identity/SOUL.md": { content: "s".repeat(1500) },
+      "_system/identity/USER.md": { content: "u".repeat(2000) },
+      "_system/identity/NOW.md": { content: "n".repeat(3000) },
+    });
+    const out = await readBootContext(app, P, { identity: true });
+    expect(out).toContain("Loop that must reach the model");
   });
 });
