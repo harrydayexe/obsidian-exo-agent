@@ -5764,7 +5764,7 @@ export class ChatView extends ItemView {
       // Keep failures visible without turning them into a dominant red card. The
       // compact row carries the human-readable state + retry; raw diagnostics stay
       // available behind a disclosure for the rare case they are needed.
-      const friendly = describeCliFailure(message);
+      const friendly = describeCliFailure(message, PROFILES[c.provider].failureWho);
       const box = body.createDiv({ cls: "mva-inline-error" });
       const row = box.createDiv({ cls: "mva-error-row" });
       setIcon(row.createSpan({ cls: "mva-error-icon" }), "triangle-alert");

@@ -1035,10 +1035,10 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
     convoBridge.chatView(this.app)?.setCurrentSelection(text, sourcePath);
   }
 
-  /** Generate a concise 3-6 word chat title with Haiku. ALWAYS runs on the Claude
-   *  CLI (its own model), regardless of the conversation's provider — a cheap,
+  /** Generate a concise 3-6 word chat title on the DEFAULT provider (Haiku on
+   *  Claude; see `utility.title` in providers/profiles.ts) — a cheap,
    *  latency-sensitive one-liner. Transient, tool-less session (same shape as
-   *  `oneShot`). Never throws: if the Claude CLI can't be resolved or the call
+   *  `oneShot`). Never throws: if the CLI can't be resolved or the call
    *  errors/aborts/times out it resolves to "" and the caller keeps the truncated
    *  placeholder. An internal 90s timeout (plus the caller's `signal`) guarantees
    *  a hung call can't leak.
@@ -1092,12 +1092,14 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
     let resultTitle = "";
     let errDetail = "";
     try {
+      // The default provider's title model (providers/profiles.ts): Haiku on
+      // Claude, the chat model elsewhere — an opencode-only user needs no Claude.
+      const provider = this.settings.provider;
       const out = await runTransient({
-        provider: "claude",
+        provider,
         settings: this.settings,
         cwd: this.vaultPath(),
-        model: "claude-haiku-5-5", // product default — cheap/fast one-liner
-        effort: "low", // Haiku 5.5 thinks by default; a title doesn't need it
+        ...PROFILES[provider].utility.title(this.settings),
         prompt: buildTitlePrompt(input),
         signal: ctrl.signal,
         tag: "title",
@@ -1130,7 +1132,7 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
   }
 
   /**
-   * Run a prompt on a cheap, transient, tool-less Claude CLI session (same
+   * Run a prompt on a cheap, transient, tool-less session of the default provider (same
    * lifecycle shape as {@link generateTitle}). The reusable chassis behind every
    * background utility pass: memory harvest, turn suggestions, playbook
    * distillation. Returns the raw model text, or "" on any failure: never throws,
@@ -1156,7 +1158,10 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
     // init + the API round trip. A 15s default could never succeed, so every
     // call site already overrode it; the default was a trap for the next one.
     const { signal, timeoutMs = 90_000, onUsage } = opts;
-    const model = opts.model || this.settings.backgroundModel || "claude-sonnet-5-5";
+    // Runs on the default provider; `opts.model` is honoured on Claude only
+    // (callers pass Claude ids), elsewhere the pass uses the chat model.
+    const provider = this.settings.provider;
+    const model = PROFILES[provider].utility.pass(this.settings, opts.model);
     const ctrl = new AbortController();
     const onAbort = () => ctrl.abort();
     if (signal.aborted) ctrl.abort();
@@ -1164,7 +1169,7 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
     const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       return await runTransient({
-        provider: "claude",
+        provider,
         settings: this.settings,
         cwd: this.vaultPath(),
         model,
@@ -1223,7 +1228,7 @@ export default class ExoPlugin extends Plugin implements ExoToolHost {
     // seeding is one-shot and high-stakes, so it uses the frontier model.
     const raw = await this.runUtilityPass(buildSeedPrompt(sources), {
       signal: ctrl.signal,
-      model: this.settings.claudeModel,
+      model: defaultModel(this.settings, this.settings.provider),
       timeoutMs: 120_000,
     });
     const blocks = parseSeedBlocks(raw);

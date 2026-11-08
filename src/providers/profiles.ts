@@ -47,10 +47,20 @@ export interface ProviderProfile {
   resumeProbe: "claude-jsonl" | "trust";
   /** The sign-in step on the "isn't ready" card. */
   signIn: string;
+  /** Error wording: the CLI's login command, and whether it runs local
+   *  models (unreachable-server / no-model failures get their own message). */
+  failureWho: { name: string; login: string; localModels?: boolean };
   /** Placeholder for the custom-models textarea. */
   customModelsExample: string;
   /** Provider-only settings that need a respawn when they change. */
   signatureExtras(s: MVASettings): unknown[];
+  /** Models for the background one-shots (AI titles, memory harvest,
+   *  suggestions, distillation, agent seeding) when this is the default
+   *  provider. `requested` is a caller's explicit pick for its own provider. */
+  utility: {
+    title(s: MVASettings): { model: string; effort: string };
+    pass(s: MVASettings, requested?: string): string;
+  };
 }
 
 export const PROFILES: Record<ProviderId, ProviderProfile> = {
@@ -67,8 +77,16 @@ export const PROFILES: Record<ProviderId, ProviderProfile> = {
     compactTakesInstructions: true,
     resumeProbe: "claude-jsonl",
     signIn: "Open a terminal and run `claude` once to sign in.",
+    failureWho: { name: "Claude", login: "claude auth login" },
     customModelsExample: "claude-opus-4-7\nclaude-opus-4-6",
     signatureExtras: () => [],
+    utility: {
+      // Haiku for a cheap, latency-sensitive one-liner; Haiku 5.5 thinks by
+      // default and a title doesn't need it.
+      title: () => ({ model: "claude-haiku-5-5", effort: "low" }),
+      // Product floor for background passes is Sonnet — never Haiku.
+      pass: (s, requested) => requested || s.backgroundModel || "claude-sonnet-5-5",
+    },
   },
   codex: {
     id: "codex",
@@ -83,8 +101,37 @@ export const PROFILES: Record<ProviderId, ProviderProfile> = {
     compactTakesInstructions: false,
     resumeProbe: "trust",
     signIn: "Open a terminal and run `codex` once to sign in.",
+    failureWho: { name: "Codex", login: "codex login" },
     customModelsExample: "gpt-5.5\ngpt-5.6-terra",
     signatureExtras: (s) => [s.codexSandbox, s.codexApproval],
+    utility: {
+      title: (s) => ({ model: s.codexModel, effort: "low" }),
+      pass: (s) => s.codexModel,
+    },
+  },
+  opencode: {
+    id: "opencode",
+    label: "opencode",
+    cliName: "opencode",
+    keys: { bin: "opencodeBin", model: "opencodeModel", customModels: "opencodeCustomModels", hiddenModels: "opencodeHiddenModels" },
+    // MCP over HTTP: opencode connects to the bridge itself, no `node` needed.
+    toolWiring: "bridge-http",
+    agentBinding: "system-prompt",
+    expandVaultCommands: true,
+    permissionChip: "modes",
+    planFromNextTurn: false,
+    compactTakesInstructions: true,
+    resumeProbe: "trust",
+    signIn: "Start your local model server (Ollama, LM Studio…) or run `opencode auth login` for a cloud provider.",
+    failureWho: { name: "opencode", login: "opencode auth login", localModels: true },
+    customModelsExample: "ollama/qwen3-coder\nlmstudio/gpt-oss-20b",
+    signatureExtras: () => [],
+    // The chat model ("" = opencode's own default): a local setup usually has
+    // one model loaded, and loading a second just for titles would cost more.
+    utility: {
+      title: (s) => ({ model: s.opencodeModel, effort: "default" }),
+      pass: (s) => s.opencodeModel,
+    },
   },
 };
 

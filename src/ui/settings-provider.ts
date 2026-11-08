@@ -3,11 +3,14 @@
  * (with diagnostics) and custom model ids. Rendered once per provider from the
  * profile table, so a new provider gets its rows without touching settings.ts.
  */
-import { Setting, type DropdownComponent } from "obsidian";
+import { FileSystemAdapter, Notice, Setting, type DropdownComponent } from "obsidian";
 import type ExoPlugin from "../main";
 import type { ProviderId } from "../providers/types";
+import { ADAPTERS } from "../providers/registry";
 import { PROFILES, providerStr } from "../providers/profiles";
 import { providerModelList } from "../providers/model-lists";
+import { listOpencodeModels } from "../providers/opencode";
+import { resolveCli } from "../cli";
 import { renderCliDiagnostics } from "./settings-cli";
 
 export function renderProviderSettings(
@@ -22,9 +25,13 @@ export function renderProviderSettings(
 
   // Options = the live catalog or built-ins + the custom ids below; editing the
   // textarea repopulates the dropdown live.
+  // A provider with no pinned models (opencode) lists what its CLI can run now,
+  // and "" means the CLI's own configured default.
+  const live = ADAPTERS[provider].models().length === 0;
   let dd: DropdownComponent | undefined;
   const fill = (d: DropdownComponent) => {
     d.selectEl.empty();
+    if (live) d.addOption("", `${label} default`);
     const cur = providerStr(s, provider, "model");
     const opts = providerModelList(s, provider, plugin.modelCatalogs);
     for (const o of opts) d.addOption(o.id, o.label);
@@ -33,9 +40,24 @@ export function renderProviderSettings(
     d.setValue(cur);
   };
 
-  new Setting(el)
+  const refresh = async () => {
+    const vault = plugin.app.vault.adapter;
+    const cwd = vault instanceof FileSystemAdapter ? vault.getBasePath() : "";
+    const cli = await resolveCli(cliName, providerStr(s, provider, "bin"));
+    const models = await listOpencodeModels(cli, cwd);
+    if (models.length) plugin.modelCatalogs[provider] = models;
+    if (dd) fill(dd);
+    onModelsChanged();
+    return models.length;
+  };
+
+  const row = new Setting(el)
     .setName(`Default ${label} model`)
-    .setDesc(`Which ${label} model new conversations start with — includes any custom ${label} models set below.`)
+    .setDesc(
+      live
+        ? `Which ${label} model new conversations start with. The list comes from your ${label} config (opencode.json) and the local model servers it finds (Ollama, LM Studio, vLLM). Empty = ${label}'s own default.`
+        : `Which ${label} model new conversations start with — includes any custom ${label} models set below.`
+    )
     .addDropdown((d) => {
       dd = d;
       fill(d);
@@ -44,6 +66,15 @@ export function renderProviderSettings(
         await plugin.saveSettings();
       });
     });
+  if (live) {
+    row.addExtraButton((b) =>
+      b.setIcon("refresh-cw").setTooltip("Refresh models").onClick(async () => {
+        const n = await refresh();
+        new Notice(n ? `${label}: ${n} models available.` : `${label} listed no models — check that it is installed and configured.`);
+      })
+    );
+    if (!plugin.modelCatalogs[provider]?.length) void refresh();
+  }
 
   new Setting(el)
     .setName(`${label} binary path`)

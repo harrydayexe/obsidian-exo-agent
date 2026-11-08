@@ -1615,7 +1615,7 @@ export class Composer {
 
   private modelLabel(): string {
     const found = this.host.allModelChoices().find((m) => m.id === this.host.model);
-    return found?.label || this.host.model || "Model";
+    return found?.label || this.host.model || "Default model";
   }
 }
 

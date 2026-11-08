@@ -1,6 +1,6 @@
 import type { ResolvedCli } from "../cli";
 
-export type ProviderId = "claude" | "codex";
+export type ProviderId = "claude" | "codex" | "opencode";
 
 export interface ModelOption {
   id: string; // value passed to the CLI ("" / "default" = CLI default)

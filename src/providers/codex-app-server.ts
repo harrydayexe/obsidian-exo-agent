@@ -15,6 +15,8 @@ import type {
 import { normalizeUtilization } from "../core/rate-limit";
 import { routeCodexElicitation, type InFlightMcpCall } from "../core/codex-approval";
 import { spawnSpec } from "../core/win-cli";
+import { elicitationContent, elicitationQuestions } from "./elicitation";
+import { EXO_HOUSE_RULES } from "./house-rules";
 
 type RpcId = number | string;
 type RpcMessage = {
@@ -82,10 +84,6 @@ function collaborationMode(opts: SessionOpts, systemPromptOverride?: string): Re
  *  work, and only known non-work is dropped. */
 const NON_TOOL_ITEMS = new Set(["agentMessage", "userMessage", "reasoning", "todoList", "plan", "error"]);
 
-const EXO_HOUSE_RULES =
-  'Exo renders every file you read, create, or edit as chips below your message. ' +
-  'Do NOT restate them as a prose list, a "Files touched"/"File toccati" section, ' +
-  "or a details/accordion — it duplicates the native UI.";
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const TURN_START_TIMEOUT_MS = 30_000;
@@ -199,61 +197,6 @@ function codexRateLimitInfo(payload: unknown, previous: RateLimitInfo | null, fu
     windows,
     ...(typeof root.planType === "string" && root.planType ? { planType: root.planType } : previous?.planType ? { planType: previous.planType } : {}),
   };
-}
-
-function enumOptions(schema: Record<string, unknown>): { label: string }[] {
-  if (Array.isArray(schema.enum)) {
-    const names = Array.isArray(schema.enumNames) ? schema.enumNames : [];
-    return schema.enum.flatMap((value, index) => typeof value === "string"
-      ? [{ label: typeof names[index] === "string" ? String(names[index]) : value }]
-      : []);
-  }
-  const variants = Array.isArray(schema.oneOf)
-    ? schema.oneOf
-    : Array.isArray(record(schema.items).anyOf) ? record(schema.items).anyOf as unknown[] : [];
-  return variants.flatMap((value) => {
-    const option = record(value);
-    return typeof option.const === "string"
-      ? [{ label: typeof option.title === "string" ? option.title : option.const }]
-      : [];
-  });
-}
-
-function elicitationQuestions(params: Record<string, unknown>): import("./types").UserQuestion[] {
-  const schema = record(params.requestedSchema);
-  const properties = record(schema.properties);
-  return Object.entries(properties).map(([id, raw]) => {
-    const property = record(raw);
-    const type = String(property.type ?? "string");
-    const options = type === "boolean" ? [{ label: "Yes" }, { label: "No" }] : enumOptions(property);
-    return {
-      id,
-      header: typeof property.title === "string" ? property.title : id,
-      question: typeof property.description === "string"
-        ? property.description
-        : typeof params.message === "string" ? params.message : id,
-      options,
-      multiSelect: type === "array",
-    };
-  });
-}
-
-function elicitationContent(
-  params: Record<string, unknown>,
-  answers: Record<string, string>,
-): Record<string, unknown> {
-  const properties = record(record(params.requestedSchema).properties);
-  return Object.fromEntries(Object.entries(answers).map(([id, answer]): [string, unknown] => {
-    const schema = record(properties[id]);
-    const type = String(schema.type ?? "string");
-    if (type === "boolean") return [id, answer === "Yes"];
-    if (type === "number" || type === "integer") {
-      const value = Number(answer);
-      return [id, Number.isFinite(value) ? value : answer];
-    }
-    if (type === "array") return [id, answer.split(",").map((value) => value.trim()).filter(Boolean)];
-    return [id, answer];
-  }));
 }
 
 function imageExt(mediaType: string): string {

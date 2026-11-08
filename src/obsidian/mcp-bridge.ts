@@ -46,6 +46,35 @@ export function authOk(header: string | undefined, token: string): boolean {
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
+/**
+ * MCP over HTTP (Streamable HTTP, JSON responses only, no sessions): the same
+ * four methods the stdio relay script speaks, for a CLI that connects to a
+ * remote MCP server itself (opencode) and so needs no `node` on PATH.
+ * Returns the JSON-RPC reply, or null for a notification (HTTP 202).
+ */
+export async function mcpHttp(tools: AnyTool[], body: string): Promise<unknown> {
+  let msg: { id?: string | number | null; method?: string; params?: Record<string, unknown> };
+  try {
+    msg = JSON.parse(body) as typeof msg;
+  } catch {
+    return { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } };
+  }
+  const { id, method, params } = msg;
+  if (id === undefined || id === null) return null;
+  const ok = (result: unknown) => ({ jsonrpc: "2.0", id, result });
+  if (method === "initialize") {
+    return ok({
+      protocolVersion: typeof params?.protocolVersion === "string" ? params.protocolVersion : "2025-06-18",
+      capabilities: { tools: {} },
+      serverInfo: { name: "exo-obsidian-bridge", version: "1.0.0" },
+    });
+  }
+  if (method === "tools/list") return ok({ tools: toolsManifest(tools) });
+  if (method === "tools/call") return ok(await callBridgeTool(tools, String(params?.name ?? ""), params?.arguments ?? {}));
+  if (method === "ping") return ok({});
+  return { jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } };
+}
+
 export interface McpBridge {
   port: number;
   token: string;
@@ -79,6 +108,15 @@ export function startMcpBridge(): Promise<McpBridge> {
     try {
       if (!authOk(req.headers.authorization, token)) return send(401, { error: "unauthorized" });
       if (req.method === "GET" && req.url === "/tools") return send(200, toolsManifest(tools));
+      if (req.method === "POST" && req.url === "/mcp") {
+        const reply = await mcpHttp(tools, await readBody(req));
+        if (reply === null) {
+          res.writeHead(202);
+          res.end();
+          return;
+        }
+        return send(200, reply);
+      }
       if (req.method === "POST" && req.url === "/call") {
         let parsed: { tool?: unknown; input?: unknown };
         try {

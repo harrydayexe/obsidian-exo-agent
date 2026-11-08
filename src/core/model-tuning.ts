@@ -39,6 +39,9 @@ export function effortOptionsFor(
   modelId: string
 ): EffortOption[] | null {
   const id = (modelId || "").toLowerCase();
+  // opencode offers per-model variants (low/medium/high on the models seen so
+  // far); the session applies a tier only when the model actually lists it.
+  if (provider === "opencode") return pick("low", "medium", "high");
   if (provider === "codex") {
     if (id.includes("gpt-6-luna") || id.includes("gpt-5.6-luna")) return pick("low", "medium", "high", "xhigh", "max");
     if (id.includes("gpt-6-astra") || id.includes("gpt-6-sol") || id.includes("gpt-6.1-sol") || id.includes("gpt-5.6")) {

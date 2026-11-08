@@ -448,7 +448,7 @@ export class MVASettingTab extends PluginSettingTab {
     new Setting(el)
       .setName("Background AI model")
       .setDesc(
-        "Model used by background LLM passes (automatic memory and the other background passes). Floor is Sonnet."
+        "Model used by background LLM passes (automatic memory and the other background passes) when Claude is the default provider. Floor is Sonnet. Codex and opencode use their default model."
       )
       .addDropdown((d) => {
         for (const o of BACKGROUND_MODEL_OPTIONS) d.addOption(o.id, o.label);
