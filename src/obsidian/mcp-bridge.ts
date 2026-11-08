@@ -2,7 +2,7 @@
  * Loopback executor for the Codex ↔ Obsidian tools bridge (spec 2026-07-14).
  * A tiny HTTP server on 127.0.0.1 (random port, bearer token) that runs the
  * SAME SdkMcpToolDefinition handlers the Claude SDK server uses. The stdio
- * MCP script codex spawns (codex-bridge-script.ts) forwards tools/list and
+ * MCP script codex spawns (mcp-bridge-script.ts) forwards tools/list and
  * tools/call here. Tool errors are MCP results (isError), never HTTP 5xx.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "http";
@@ -46,7 +46,7 @@ export function authOk(header: string | undefined, token: string): boolean {
   return got.length === want.length && timingSafeEqual(got, want);
 }
 
-export interface CodexBridge {
+export interface McpBridge {
   port: number;
   token: string;
   setTools(tools: AnyTool[]): void;
@@ -62,7 +62,7 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-export function startCodexBridge(): Promise<CodexBridge> {
+export function startMcpBridge(): Promise<McpBridge> {
   const token = randomBytes(32).toString("hex");
   let tools: AnyTool[] = [];
   let stopped = false;

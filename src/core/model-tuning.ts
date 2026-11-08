@@ -15,6 +15,8 @@
  * Unknown/custom Claude ids get the full ladder: a wrong tier degrades to a
  * CLI warning, while hiding the control would block valid new models.
  */
+import type { ProviderId } from "../providers/types";
+
 export type EffortOption = [value: string, label: string];
 
 const LADDER: EffortOption[] = [
@@ -33,7 +35,7 @@ const pick = (...values: string[]): EffortOption[] =>
 /** Effort tiers for a model, or `null` when the model has no effort support
  *  (the caller hides the control). */
 export function effortOptionsFor(
-  provider: "claude" | "codex",
+  provider: ProviderId,
   modelId: string
 ): EffortOption[] | null {
   const id = (modelId || "").toLowerCase();
@@ -61,6 +63,6 @@ export function clampEffort(effort: string, options: EffortOption[] | null): str
 /** The effort a session for this model actually runs with. The stored setting
  *  is never rewritten, so a tier the user chose survives a detour through a
  *  model that doesn't offer it (e.g. Haiku) and applies again on the way back. */
-export function effortFor(provider: "claude" | "codex", modelId: string, effort: string): string {
+export function effortFor(provider: ProviderId, modelId: string, effort: string): string {
   return clampEffort(effort || "default", effortOptionsFor(provider, modelId));
 }

@@ -354,8 +354,8 @@ export class CodexSession implements AgentSession {
       );
     }
     // Later overrides win: the native Obsidian bridge survives Fast startup.
-    if (this.opts.toolsEnabled && this.opts.codexBridge) {
-      args.push("-c", mcpOverride(this.opts.codexBridge));
+    if (this.opts.toolsEnabled && this.opts.mcpBridge) {
+      args.push("-c", mcpOverride(this.opts.mcpBridge));
     }
 
     try {
@@ -419,7 +419,7 @@ export class CodexSession implements AgentSession {
   private enabledTools(): string[] {
     if (!this.opts.toolsEnabled) return [];
     const tools = ["Bash", "Edit", "WebSearch", "Agent", "TodoWrite"];
-    if (this.opts.codexBridge) tools.push("mcp__obsidian__*");
+    if (this.opts.mcpBridge) tools.push("mcp__obsidian__*");
     return tools;
   }
 
@@ -1096,6 +1096,6 @@ export class CodexSession implements AgentSession {
   private stopBridge(): void {
     if (this.bridgeStopped) return;
     this.bridgeStopped = true;
-    this.opts.codexBridge?.stop?.();
+    this.opts.mcpBridge?.stop?.();
   }
 }

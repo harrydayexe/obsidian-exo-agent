@@ -5,6 +5,7 @@
  * `from "./settings"` path.
  */
 import type { PermissionMode, ProviderId } from "./providers/types";
+import { providerStr } from "./providers/profiles";
 import type { AutomationConfig } from "./core/automations";
 import { initialDailyPulseReviewState, type DailyPulseReviewState } from "./core/daily-pulse";
 import type { MemorySetup } from "./core/vault-setup";
@@ -246,8 +247,8 @@ export interface MVASettings {
 }
 
 /** The model new chats and background runs of `provider` start from. */
-export function defaultModel(s: Pick<MVASettings, "claudeModel" | "codexModel">, provider: ProviderId): string {
-  return provider === "claude" ? s.claudeModel : s.codexModel;
+export function defaultModel(s: MVASettings, provider: ProviderId): string {
+  return providerStr(s, provider, "model");
 }
 
 export const DEFAULT_SETTINGS: MVASettings = {

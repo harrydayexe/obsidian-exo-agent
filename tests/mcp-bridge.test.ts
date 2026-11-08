@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { tool } from "@anthropic-ai/claude-agent-sdk";
-import { toolsManifest, callBridgeTool, authOk, startCodexBridge } from "../src/obsidian/codex-bridge";
+import { toolsManifest, callBridgeTool, authOk, startMcpBridge } from "../src/obsidian/mcp-bridge";
 import { buildObsidianTools } from "../src/obsidian/tools";
 import type { App } from "obsidian";
 
@@ -65,9 +65,9 @@ describe("authOk", () => {
   });
 });
 
-describe("startCodexBridge (live http)", () => {
+describe("startMcpBridge (live http)", () => {
   it("serves /tools and /call with auth, 401 without", async () => {
-    const b = await startCodexBridge();
+    const b = await startMcpBridge();
     try {
       b.setTools([echo]);
       const base = `http://127.0.0.1:${b.port}`;
